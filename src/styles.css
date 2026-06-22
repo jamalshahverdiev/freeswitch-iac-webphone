@@ -1,0 +1,103 @@
+:root {
+  color-scheme: light dark;
+  --bg: #0f1115;
+  --card: #1a1d24;
+  --fg: #e7e9ee;
+  --muted: #9aa3b2;
+  --accent: #4f8cff;
+  --ok: #34c759;
+  --warn: #ffb020;
+  --off: #6b7280;
+  --danger: #ff453a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.app {
+  max-width: 460px;
+  margin: 40px auto;
+  padding: 0 16px;
+}
+
+h1 { font-size: 1.4rem; margin: 0 0 2px; }
+.sub { color: var(--muted); margin: 0 0 20px; font-size: 0.85rem; }
+
+.card {
+  background: var(--card);
+  border: 1px solid #262a33;
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.status { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--off); }
+.dot.ok { background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.dot.off { background: var(--off); }
+.muted { color: var(--muted); font-weight: 400; }
+
+.settings { display: flex; flex-direction: column; gap: 12px; }
+.settings .row { display: flex; gap: 12px; }
+.settings .row label { flex: 1 1 0; min-width: 0; } /* min-width:0 lets the field shrink inside flex */
+label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--muted); min-width: 0; }
+
+input {
+  width: 100%;
+  background: #0f1115;
+  border: 1px solid #2c313b;
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: var(--fg);
+  font-size: 0.95rem;
+}
+input:focus { outline: none; border-color: var(--accent); }
+input:disabled { opacity: 0.6; }
+
+button {
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.secondary { background: #2c313b; }
+button.ok { background: var(--ok); }
+button.danger { background: var(--danger); }
+
+.dialer { display: flex; gap: 10px; margin-bottom: 14px; }
+.dialer input { flex: 1; }
+
+.dialpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%; /* fill the container (callbox centers its children, which would shrink the grid) */
+}
+.key {
+  background: #21262f;
+  color: var(--fg);
+  font-size: 1.25rem;
+  font-weight: 600;
+  padding: 14px 0;
+  border-radius: 10px;
+}
+.key:hover { background: #2c333e; }
+.key:active { background: var(--accent); }
+
+.callbox { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.callstate { font-size: 1.1rem; font-weight: 600; }
+.callbtns { display: flex; gap: 12px; }
+
+.error { color: var(--danger); font-size: 0.85rem; margin: 12px 0 0; }
