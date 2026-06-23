@@ -31,8 +31,13 @@ func main() {
 		r.Use(authMiddleware(verifier))
 		r.Get("/api/session", s.handleSession)
 
-		// supervisor/admin: live telephony events (control-plane SSE, proxied)
-		r.With(requireRole("supervisor", "admin")).Get("/api/events", s.handleEvents)
+		// supervisor/admin: live telephony events + agent control (proxied)
+		r.Group(func(r chi.Router) {
+			r.Use(requireRole("supervisor", "admin"))
+			r.Get("/api/events", s.handleEvents)
+			r.Get("/api/agents", s.handleAgents)
+			r.Put("/api/agents/{name}/status", s.handleSetAgentStatus)
+		})
 	})
 
 	log.Printf("bff listening on %s (issuer=%s, control-plane=%s)", cfg.Addr, cfg.OIDCIssuer, cfg.CPURL)
