@@ -13,6 +13,7 @@ export function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
   const [authUser, setAuthUser] = useState("");
   const [roles, setRoles] = useState<string[]>([]);
+  const [myAddr, setMyAddr] = useState(""); // extension@domain from the session
   const [authErr, setAuthErr] = useState<string>();
 
   const [settings, setSettings] = useState<Settings>(loadSettings);
@@ -48,6 +49,7 @@ export function App() {
     const s = await fetchSession(accessToken);
     setAuthUser(s.user);
     setRoles(s.roles);
+    setMyAddr(`${s.sip.extension}@${s.sip.domain}`);
     await phone.start(
       { wssUrl: s.sip.wss_url, domain: s.sip.domain, user: s.sip.extension },
       s.sip.password,
@@ -85,6 +87,7 @@ export function App() {
           <div className="whoami">
             <div>
               <strong>{authUser}</strong>
+              {myAddr && <span className="muted"> · {myAddr}</span>}
               <span className="roles">
                 {roles
                   .filter((r) => ["agent", "supervisor", "admin"].includes(r))

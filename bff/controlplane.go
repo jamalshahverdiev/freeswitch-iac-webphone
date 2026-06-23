@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -70,6 +72,48 @@ func (c *cpClient) operator(ctx context.Context, subject string) (*cpOperator, e
 		return nil, err
 	}
 	return &o, nil
+}
+
+// getWithTotal does a GET and returns the body plus the X-Total-Count header
+// (the control-plane sets it on paginated list endpoints).
+func (c *cpClient) getWithTotal(ctx context.Context, path string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, 0, fmt.Errorf("control-plane GET %s: %d: %s", path, resp.StatusCode, string(body))
+	}
+	total, _ := strconv.Atoi(resp.Header.Get("X-Total-Count"))
+	return body, total, nil
+}
+
+// putJSON sends a PUT with a JSON body and returns the upstream status code.
+func (c *cpClient) putJSON(ctx context.Context, path string, body any) (int, []byte, error) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return 0, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.base+path, bytes.NewReader(b))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, out, nil
 }
 
 type cpUser struct {
