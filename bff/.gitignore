@@ -1,0 +1,7 @@
+# compiled BFF binary (from `go build`)
+/bff
+# local env (commit .env.example, not .env)
+.env
+# test/coverage artifacts
+*.test
+*.out
