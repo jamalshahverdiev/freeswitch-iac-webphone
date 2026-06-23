@@ -19,6 +19,13 @@ export const defaultSettings: Settings = {
   user: env.VITE_DEFAULT_USER ?? "4201",
 };
 
+// OIDC (Keycloak) + BFF endpoints for the sign-in flow.
+export const oidcConfig = {
+  authority: env.VITE_OIDC_AUTHORITY ?? "http://localhost:8081/realms/freeswitch",
+  clientId: env.VITE_OIDC_CLIENT_ID ?? "webphone",
+};
+export const bffUrl = (env.VITE_BFF_URL ?? "http://localhost:8090").replace(/\/$/, "");
+
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(LS_KEY);

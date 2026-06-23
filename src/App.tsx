@@ -2,9 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { loadSettings, saveSettings, type Settings } from "./config";
 import { usePhone } from "./store";
 import * as phone from "./sip/phone";
+import { currentUser, finishLogin, isCallback, login, logout } from "./auth";
+import { fetchSession } from "./session";
+
+type AuthStatus = "loading" | "anon" | "in";
 
 export function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
+  const [authUser, setAuthUser] = useState("");
+  const [roles, setRoles] = useState<string[]>([]);
+  const [authErr, setAuthErr] = useState<string>();
+
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [password, setPassword] = useState("");
   const [target, setTarget] = useState("");
@@ -13,89 +22,94 @@ export function App() {
   const registered = registration === "registered";
   const busy = call !== "idle";
 
-  // Clean up the SIP session when the tab closes.
+  // Bootstrap: handle the OIDC callback, then auto-register from the BFF session.
   useEffect(() => {
-    return () => {
-      void phone.stop();
-    };
+    (async () => {
+      try {
+        if (isCallback()) await finishLogin();
+        const user = await currentUser();
+        if (user) {
+          await startFromSession(user.access_token);
+          setAuthStatus("in");
+        } else {
+          setAuthStatus("anon");
+        }
+      } catch (e) {
+        setAuthErr(e instanceof Error ? e.message : String(e));
+        setAuthStatus("anon");
+      }
+    })();
+    return () => void phone.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function onRegister(e: React.FormEvent) {
+  async function startFromSession(accessToken: string) {
+    const s = await fetchSession(accessToken);
+    setAuthUser(s.user);
+    setRoles(s.roles);
+    await phone.start(
+      { wssUrl: s.sip.wss_url, domain: s.sip.domain, user: s.sip.extension },
+      s.sip.password,
+      audioRef.current!,
+    );
+  }
+
+  async function onManualRegister(e: React.FormEvent) {
     e.preventDefault();
-    saveSettings(settings); // persists non-secret fields only
+    saveSettings(settings);
     try {
       await phone.start(settings, password, audioRef.current!);
     } catch {
-      /* error surfaced via store */
+      /* surfaced via store */
     }
   }
 
   return (
     <div className="app">
       <h1>FreeSWITCH Webphone</h1>
-      <p className="sub">Phase 1 — register + audio call. SIP.js over WSS.</p>
+      <p className="sub">SIP.js over WSS · Keycloak sign-in.</p>
 
+      {/* ---- Identity ---- */}
       <section className="card">
-        <div className="status">
-          <span className={`dot ${registered ? "ok" : connected ? "warn" : "off"}`} />
-          <strong>{labelFor(registration)}</strong>
-          {connected && !registered && <span className="muted"> · socket up</span>}
-        </div>
+        {authStatus === "loading" && <div className="muted">Loading…</div>}
 
-        <form className="settings" onSubmit={onRegister}>
-          <label>
-            WSS URL
-            <input
-              value={settings.wssUrl}
-              onChange={(e) => setSettings({ ...settings, wssUrl: e.target.value })}
-              disabled={registered}
-              spellCheck={false}
-            />
-          </label>
-          <div className="row">
-            <label>
-              Extension
-              <input
-                value={settings.user}
-                onChange={(e) => setSettings({ ...settings, user: e.target.value })}
-                disabled={registered}
-              />
-            </label>
-            <label>
-              Domain
-              <input
-                value={settings.domain}
-                onChange={(e) => setSettings({ ...settings, domain: e.target.value })}
-                disabled={registered}
-              />
-            </label>
+        {authStatus === "anon" && (
+          <div className="signin">
+            <button onClick={() => void login()}>Sign in with Keycloak</button>
+            {authErr && <p className="error">{authErr}</p>}
           </div>
-          <label>
-            Password <span className="muted">(kept in memory only)</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={registered}
-              autoComplete="off"
-            />
-          </label>
+        )}
 
-          {!registered ? (
-            <button type="submit" disabled={!password || registration === "connecting"}>
-              {registration === "connecting" || registration === "registering"
-                ? "Connecting…"
-                : "Register"}
+        {authStatus === "in" && (
+          <div className="whoami">
+            <div>
+              <strong>{authUser}</strong>
+              <span className="roles">
+                {roles
+                  .filter((r) => ["agent", "supervisor", "admin"].includes(r))
+                  .map((r) => (
+                    <span key={r} className="chip">
+                      {r}
+                    </span>
+                  ))}
+              </span>
+            </div>
+            <button className="secondary" onClick={() => void logout()}>
+              Sign out
             </button>
-          ) : (
-            <button type="button" className="secondary" onClick={() => void phone.stop()}>
-              Disconnect
-            </button>
-          )}
-        </form>
+          </div>
+        )}
+
+        {authStatus === "in" && (
+          <div className="status">
+            <span className={`dot ${registered ? "ok" : connected ? "warn" : "off"}`} />
+            <span>{labelFor(registration)}</span>
+          </div>
+        )}
         {error && <p className="error">{error}</p>}
       </section>
 
+      {/* ---- Call UI (when registered) ---- */}
       {registered && (
         <section className="card">
           {call === "idle" && (
@@ -154,6 +168,53 @@ export function App() {
         </section>
       )}
 
+      {/* ---- Advanced: manual / bring-your-own-PBX (no Keycloak) ---- */}
+      {!registered && (
+        <details className="card advanced">
+          <summary>Advanced — connect manually (bring your own PBX)</summary>
+          <form className="settings" onSubmit={onManualRegister}>
+            <label>
+              WSS URL
+              <input
+                value={settings.wssUrl}
+                onChange={(e) => setSettings({ ...settings, wssUrl: e.target.value })}
+                spellCheck={false}
+              />
+            </label>
+            <div className="row">
+              <label>
+                Extension
+                <input
+                  value={settings.user}
+                  onChange={(e) => setSettings({ ...settings, user: e.target.value })}
+                />
+              </label>
+              <label>
+                Domain
+                <input
+                  value={settings.domain}
+                  onChange={(e) => setSettings({ ...settings, domain: e.target.value })}
+                />
+              </label>
+            </div>
+            <label>
+              Password <span className="muted">(kept in memory only)</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="off"
+              />
+            </label>
+            <button type="submit" disabled={!password || registration === "connecting"}>
+              {registration === "connecting" || registration === "registering"
+                ? "Connecting…"
+                : "Register"}
+            </button>
+          </form>
+        </details>
+      )}
+
       {/* SimpleUser attaches the remote stream here */}
       <audio ref={audioRef} autoPlay />
     </div>
@@ -183,7 +244,7 @@ function labelFor(r: string): string {
     case "connecting":
       return "Connecting…";
     case "failed":
-      return "Failed";
+      return "Registration failed";
     default:
       return "Not registered";
   }
