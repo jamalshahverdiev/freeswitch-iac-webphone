@@ -9,7 +9,7 @@ one-to-one audio call, with:
 - ringback (caller) and ringtone (callee), generated via Web Audio;
 - a dial pad with audible DTMF touch-tones — builds the number when idle, sends
   DTMF to the far end during a call (e.g. to drive an IVR);
-- mute / unmute.
+- mute / unmute, hold / resume, and blind transfer (REFER).
 
 No login yet (credentials are entered in the settings form and kept in memory
 only); Keycloak/RBAC auth arrives in Phase 1.5.

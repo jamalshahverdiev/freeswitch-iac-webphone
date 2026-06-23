@@ -20,7 +20,9 @@ export function App() {
   const [password, setPassword] = useState("");
   const [target, setTarget] = useState("");
 
-  const { connected, registration, call, peer, muted, error } = usePhone();
+  const { connected, registration, call, peer, muted, held, error } = usePhone();
+  const [xfer, setXfer] = useState(false);
+  const [xferTo, setXferTo] = useState("");
   const registered = registration === "registered";
   const busy = call !== "idle";
 
@@ -163,14 +165,48 @@ export function App() {
                   </button>
                 )}
                 {call === "active" && (
-                  <button className="secondary" onClick={() => phone.toggleMute()}>
-                    {muted ? "Unmute" : "Mute"}
-                  </button>
+                  <>
+                    <button className="secondary" onClick={() => phone.toggleMute()}>
+                      {muted ? "Unmute" : "Mute"}
+                    </button>
+                    <button className="secondary" onClick={() => void phone.toggleHold()}>
+                      {held ? "Resume" : "Hold"}
+                    </button>
+                    <button className="secondary" onClick={() => setXfer((v) => !v)}>
+                      Transfer
+                    </button>
+                  </>
                 )}
                 <button className="danger" onClick={() => void phone.hangup()}>
                   {call === "incoming" ? "Reject" : "Hang up"}
                 </button>
               </div>
+
+              {call === "active" && xfer && (
+                <form
+                  className="dialer"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (xferTo) {
+                      void phone.blindTransfer(xferTo.trim(), settings.domain);
+                      setXfer(false);
+                      setXferTo("");
+                    }
+                  }}
+                >
+                  <input
+                    placeholder="Transfer to, e.g. 4100"
+                    value={xferTo}
+                    onChange={(e) => setXferTo(e.target.value)}
+                    inputMode="tel"
+                    autoFocus
+                  />
+                  <button type="submit" disabled={!xferTo}>
+                    Go
+                  </button>
+                </form>
+              )}
+
               {call === "active" && <Dialpad onPress={(k) => void phone.sendDtmf(k)} />}
             </div>
           )}
