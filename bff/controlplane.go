@@ -17,9 +17,10 @@ var errNotFound = errors.New("not found")
 // cpClient talks to the control-plane API with the server-side bearer token.
 // This token never reaches the browser — the BFF is the only holder.
 type cpClient struct {
-	base  string
-	token string
-	hc    *http.Client
+	base     string
+	token    string
+	hc       *http.Client // short-timeout, for request/response calls
+	streamHC *http.Client // no timeout, for long-lived SSE streaming
 }
 
 func newCPClient(cfg Config) *cpClient {
@@ -27,7 +28,12 @@ func newCPClient(cfg Config) *cpClient {
 	if cfg.CPInsecure {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // dev self-signed CA
 	}
-	return &cpClient{base: cfg.CPURL, token: cfg.CPToken, hc: &http.Client{Timeout: 10 * time.Second, Transport: tr}}
+	return &cpClient{
+		base:     cfg.CPURL,
+		token:    cfg.CPToken,
+		hc:       &http.Client{Timeout: 10 * time.Second, Transport: tr},
+		streamHC: &http.Client{Transport: tr}, // no Timeout: SSE is long-lived
+	}
 }
 
 func (c *cpClient) get(ctx context.Context, path string, out any) error {

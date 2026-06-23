@@ -4,6 +4,7 @@ import { usePhone } from "./store";
 import * as phone from "./sip/phone";
 import { currentUser, finishLogin, isCallback, login, logout } from "./auth";
 import { fetchSession } from "./session";
+import { SupervisorPanel } from "./SupervisorPanel";
 
 type AuthStatus = "loading" | "anon" | "in";
 
@@ -108,6 +109,11 @@ export function App() {
         )}
         {error && <p className="error">{error}</p>}
       </section>
+
+      {/* ---- Supervisor wallboard (role-gated) ---- */}
+      {authStatus === "in" && (roles.includes("supervisor") || roles.includes("admin")) && (
+        <SupervisorPanel />
+      )}
 
       {/* ---- Call UI (when registered) ---- */}
       {registered && (

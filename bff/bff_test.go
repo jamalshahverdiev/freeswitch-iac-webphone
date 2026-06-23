@@ -48,6 +48,30 @@ func TestSplitCSV(t *testing.T) {
 	}
 }
 
+func TestRequireRole(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := requireRole("supervisor", "admin")(next)
+
+	cases := []struct {
+		roles []string
+		want  int
+	}{
+		{[]string{"supervisor"}, http.StatusOK},
+		{[]string{"admin"}, http.StatusOK},
+		{[]string{"agent"}, http.StatusForbidden},
+		{nil, http.StatusForbidden},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest(http.MethodGet, "/api/events", nil)
+		r = r.WithContext(context.WithValue(r.Context(), identityKey, identity{Roles: c.roles}))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		if rec.Code != c.want {
+			t.Errorf("roles=%v got %d want %d", c.roles, rec.Code, c.want)
+		}
+	}
+}
+
 func TestCPClient(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tok" {

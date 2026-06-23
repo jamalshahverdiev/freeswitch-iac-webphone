@@ -120,3 +120,18 @@ button.danger { background: var(--danger); }
 }
 .advanced summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
 .advanced .settings { margin-top: 14px; }
+
+/* supervisor wallboard */
+.sup-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+.tiles { display: flex; gap: 12px; margin-bottom: 14px; }
+.tile { flex: 1; background: #21262f; border-radius: 10px; padding: 12px; text-align: center; }
+.tile-n { font-size: 1.6rem; font-weight: 700; }
+.tile-l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.agents { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.agent-row { display: flex; justify-content: space-between; font-size: 0.85rem; }
+.badge { font-size: 0.72rem; background: #2c313b; color: var(--muted); border-radius: 6px; padding: 1px 7px; }
+.badge.ok { color: var(--ok); }
+.evlog { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; font-size: 0.8rem; }
+.evrow { display: flex; gap: 8px; }
+.evtype { color: var(--accent); flex: 0 0 130px; }
+.evdata { color: var(--muted); }
