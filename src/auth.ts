@@ -22,11 +22,19 @@ export function isCallback(): boolean {
   return p.has("code") && p.has("state");
 }
 
-/** Complete a redirect callback and strip the params from the URL. */
-export async function finishLogin(): Promise<User | null> {
-  const user = await userManager.signinRedirectCallback();
-  window.history.replaceState({}, document.title, redirect);
-  return user;
+/** Complete a redirect callback and strip the params from the URL. The
+ * authorization code is single-use, so guard against a double exchange (React
+ * StrictMode mounts effects twice in dev, and reloads can re-enter): the code
+ * is exchanged once and the same promise is reused. */
+let callback: Promise<User | null> | null = null;
+export function finishLogin(): Promise<User | null> {
+  if (!callback) {
+    callback = userManager.signinRedirectCallback().then((user) => {
+      window.history.replaceState({}, document.title, redirect);
+      return user;
+    });
+  }
+  return callback;
 }
 
 export function login(): Promise<void> {

@@ -3,6 +3,7 @@
 // video, conference) come in later phases via the lower-level sip.js API.
 
 import { SimpleUser, SimpleUserOptions } from "sip.js/lib/platform/web";
+import { UserAgent } from "sip.js";
 import type { Settings } from "../config";
 import { usePhone } from "../store";
 import * as ringer from "./ringer";
@@ -54,6 +55,7 @@ export async function start(settings: Settings, password: string, remoteAudio: H
         usePhone.getState().setCall("idle");
         ringer.stop();
       },
+      onCallHold: (held) => usePhone.getState().setHeld(held),
     },
   };
 
@@ -106,6 +108,28 @@ export function toggleMute() {
     ua.mute();
     s.setMuted(true);
   }
+}
+
+/** Toggle hold (re-INVITE). onCallHold delegate syncs the store on success. */
+export async function toggleHold() {
+  if (!ua) return;
+  if (usePhone.getState().held) {
+    await ua.unhold();
+  } else {
+    await ua.hold();
+  }
+}
+
+/** Blind-transfer the active call to another extension (sends a REFER). The
+ * local leg ends once FreeSWITCH accepts the transfer. SimpleUser doesn't expose
+ * REFER, so we reach its underlying Session. */
+export async function blindTransfer(target: string, domain: string) {
+  if (!ua) return;
+  const uri = UserAgent.makeURI(`sip:${target}@${domain}`);
+  if (!uri) throw new Error("invalid transfer target");
+  const session = (ua as unknown as { session?: { refer: (to: unknown) => Promise<unknown> } }).session;
+  if (!session) throw new Error("no active call to transfer");
+  await session.refer(uri);
 }
 
 /** Answer the current incoming call. */
