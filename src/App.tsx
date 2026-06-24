@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { loadSettings, saveSettings, type Settings } from "./config";
 import { usePhone, type LineView } from "./store";
 import * as phone from "./sip/phone";
@@ -173,6 +173,7 @@ function CallPanel() {
   const lines = usePhone((s) => s.lines);
 
   const [dial, setDial] = useState("");
+  const [withVideo, setWithVideo] = useState(false);
   const [xferMenuFor, setXferMenuFor] = useState<string | null>(null);
   const [blindFor, setBlindFor] = useState<string | null>(null);
   const [blindTo, setBlindTo] = useState("");
@@ -209,11 +210,20 @@ function CallPanel() {
             {xferOriginId === line.id && <span className="chip">transferring…</span>}
           </div>
 
+          {line.video && (line.state === "active" || line.state === "held") && (
+            <VideoTile lineId={line.id} active={line.state === "active"} />
+          )}
+
           <div className="callbtns">
             {line.state === "ringing" && (
-              <button className="ok" onClick={() => void phone.answer(line.id)}>
-                Answer
-              </button>
+              <>
+                <button className="ok" onClick={() => void phone.answer(line.id)}>
+                  Answer
+                </button>
+                <button className="ok" onClick={() => void phone.answer(line.id, true)}>
+                  Answer (video)
+                </button>
+              </>
             )}
             {line.state === "active" && (
               <>
@@ -331,7 +341,7 @@ function CallPanel() {
             onSubmit={(e) => {
               e.preventDefault();
               if (dial) {
-                void phone.call(dial.trim());
+                void phone.call(dial.trim(), withVideo);
                 setDial("");
               }
             }}
@@ -343,9 +353,17 @@ function CallPanel() {
               inputMode="tel"
             />
             <button type="submit" disabled={!dial}>
-              Call
+              {withVideo ? "Video call" : "Call"}
             </button>
           </form>
+          <label className="videotoggle">
+            <input
+              type="checkbox"
+              checked={withVideo}
+              onChange={(e) => setWithVideo(e.target.checked)}
+            />
+            Video
+          </label>
           <Dialpad
             onPress={(k) => {
               phone.tone(k);
@@ -356,6 +374,27 @@ function CallPanel() {
       )}
     </section>
   );
+}
+
+/** Mounts the line's phone-owned <video> elements (remote + local PiP) into the
+ * DOM. SessionManager attaches/cleans the media streams; we just place them. */
+function VideoTile({ lineId, active }: { lineId: string; active: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const els = phone.getVideoEls(lineId);
+    const node = ref.current;
+    if (!els || !node) return;
+    els.remote.className = "video-remote";
+    els.local.className = "video-local";
+    node.appendChild(els.remote);
+    node.appendChild(els.local);
+    return () => {
+      if (els.remote.parentNode === node) node.removeChild(els.remote);
+      if (els.local.parentNode === node) node.removeChild(els.local);
+    };
+    // re-mount once the line connects (elements exist only after media setup)
+  }, [lineId, active]);
+  return <div className="videos" ref={ref} />;
 }
 
 const DIALPAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];

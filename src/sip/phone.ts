@@ -27,27 +27,74 @@ interface Line {
 }
 const lines = new Map<string, Line>();
 
-// One detached <audio> element per session. Held lines have their receiver
-// tracks disabled by SessionManager, so only the foreground line is audible
-// even though every line has its own sink.
-const audioEls = new Map<string, HTMLAudioElement>();
+// Lines that negotiated a camera track. Populated by call()/answer() before the
+// session reaches Established, so the media setup below knows to wire a <video>.
+const videoLines = new Set<string>();
 
-function remoteMediaFor(session: Session): { audio: HTMLAudioElement } {
+// One detached <audio> sink per audio-only session. Held lines have their
+// receiver tracks disabled by SessionManager, so only the foreground line is
+// audible even though every line has its own sink.
+const audioEls = new Map<string, HTMLAudioElement>();
+// One <video> pair per video session, owned here and mounted into the DOM by the
+// UI (see getVideoEls). The remote element carries both audio and video — when
+// media.remote returns a video element, SessionManager attaches the full remote
+// stream to it, so video lines do not also use an audio sink.
+const videoEls = new Map<string, { local: HTMLVideoElement; remote: HTMLVideoElement }>();
+
+function audioFor(session: Session): HTMLAudioElement {
   let el = audioEls.get(session.id);
   if (!el) {
     el = new Audio();
     el.autoplay = true;
     audioEls.set(session.id, el);
   }
-  return { audio: el };
+  return el;
 }
 
-function dropAudio(id: string): void {
+function videoPairFor(session: Session): { local: HTMLVideoElement; remote: HTMLVideoElement } {
+  let pair = videoEls.get(session.id);
+  if (!pair) {
+    const local = document.createElement("video");
+    local.muted = true; // never echo our own mic
+    local.autoplay = true;
+    local.playsInline = true;
+    const remote = document.createElement("video");
+    remote.autoplay = true;
+    remote.playsInline = true;
+    pair = { local, remote };
+    videoEls.set(session.id, pair);
+  }
+  return pair;
+}
+
+function remoteMediaFor(session: Session): { audio?: HTMLAudioElement; video?: HTMLVideoElement } {
+  if (videoLines.has(session.id)) return { video: videoPairFor(session).remote };
+  return { audio: audioFor(session) };
+}
+
+function localMediaFor(session: Session): { video?: HTMLVideoElement } {
+  if (videoLines.has(session.id)) return { video: videoPairFor(session).local };
+  return {};
+}
+
+function dropMedia(id: string): void {
   const el = audioEls.get(id);
   if (el) {
     el.srcObject = null;
     audioEls.delete(id);
   }
+  const pair = videoEls.get(id);
+  if (pair) {
+    pair.local.srcObject = null;
+    pair.remote.srcObject = null;
+    videoEls.delete(id);
+  }
+  videoLines.delete(id);
+}
+
+/** The <video> elements (local + remote) for a video line, for the UI to mount. */
+export function getVideoEls(id: string): { local: HTMLVideoElement; remote: HTMLVideoElement } | undefined {
+  return videoEls.get(id);
 }
 
 function peerOf(session: Session): string {
@@ -105,7 +152,10 @@ export async function start(settings: Settings, password: string): Promise<void>
     // a second line but reject a third".
     maxSimultaneousSessions: 1,
     media: {
+      // Default capture is audio-only; a video call overrides constraints per
+      // call/answer (see call/answer below) so plain calls never open a camera.
       constraints: { audio: true, video: false },
+      local: (session) => localMediaFor(session),
       remote: (session) => remoteMediaFor(session),
     },
     userAgentOptions: {
@@ -128,14 +178,14 @@ export async function start(settings: Settings, password: string): Promise<void>
         if (session instanceof Invitation) return;
         lines.set(session.id, {
           session,
-          view: { id: session.id, peer: peerOf(session), outgoing: true, state: "establishing", muted: false },
+          view: { id: session.id, peer: peerOf(session), outgoing: true, state: "establishing", muted: false, video: false },
         });
         publish();
       },
       onCallReceived: (session) => {
         lines.set(session.id, {
           session,
-          view: { id: session.id, peer: peerOf(session), outgoing: false, state: "ringing", muted: false },
+          view: { id: session.id, peer: peerOf(session), outgoing: false, state: "ringing", muted: false, video: false },
         });
         publish();
       },
@@ -143,7 +193,7 @@ export async function start(settings: Settings, password: string): Promise<void>
       onCallHold: (session, held) => setState(session.id, held ? "held" : "active"),
       onCallHangup: (session) => {
         lines.delete(session.id);
-        dropAudio(session.id);
+        dropMedia(session.id);
         publish();
       },
     },
@@ -166,7 +216,7 @@ export async function stop(): Promise<void> {
   ringer.stop();
   ringMode = "none";
   lines.clear();
-  [...audioEls.keys()].forEach(dropAudio);
+  [...new Set([...audioEls.keys(), ...videoEls.keys()])].forEach(dropMedia);
   if (!sm) return;
   try {
     await sm.unregister();
@@ -186,36 +236,63 @@ function get(id: string): Session {
   return line.session;
 }
 
+// Re-INVITEs (hold/unhold) must not overlap on the same dialog — a second one
+// sent before the first completes glares into a 491 Request Pending and leaves
+// the line stuck. Serialize them per line so e.g. a quick Hold→Resume runs the
+// unhold only after the hold settles.
+const reinviteChain = new Map<string, Promise<void>>();
+function serialize(id: string, fn: () => Promise<void>): Promise<void> {
+  const prev = reinviteChain.get(id) ?? Promise.resolve();
+  const run = prev.then(fn, fn); // run regardless of how the previous op settled
+  reinviteChain.set(id, run.then(() => {}, () => {}));
+  return run;
+}
+
 /** Hold every established foreground line except `exceptId` (one at a time). */
 async function holdOthers(exceptId?: string): Promise<void> {
   if (!sm) return;
   await Promise.all(
     [...lines.values()]
       .filter((l) => l.session.id !== exceptId && l.view.state === "active")
-      .map((l) => sm!.hold(l.session).catch(() => {})),
+      .map((l) => serialize(l.session.id, () => sm!.hold(l.session)).catch(() => {})),
   );
 }
 
-/** Place an outbound call. Holds any current foreground line first. */
-export async function call(target: string): Promise<void> {
+/** Place an outbound call (optionally with video). Holds the foreground line. */
+export async function call(target: string, video = false): Promise<void> {
   if (!sm) throw new Error("not connected");
   if (lines.size >= MAX_LINES) throw new Error("all lines in use");
   await holdOthers();
   try {
-    await sm.call(`sip:${target}@${domain}`);
+    const inviter = await sm.call(`sip:${target}@${domain}`, undefined, {
+      sessionDescriptionHandlerOptions: { constraints: { audio: true, video } },
+    });
+    if (video) markVideo(inviter.id);
   } catch (err) {
     usePhone.getState().setError(errMsg(err));
     throw err;
   }
 }
 
-/** Answer an incoming line. Holds any current foreground line first. */
-export async function answer(id: string): Promise<void> {
+/** Answer an incoming line (optionally with video). Holds the foreground line. */
+export async function answer(id: string, video = false): Promise<void> {
   if (!sm) return;
   ringer.stop();
   ringMode = "none";
   await holdOthers(id);
-  await sm.answer(get(id));
+  if (video) markVideo(id); // before answer() so media setup wires a <video>
+  await sm.answer(get(id), {
+    sessionDescriptionHandlerOptions: { constraints: { audio: true, video } },
+  });
+}
+
+function markVideo(id: string): void {
+  videoLines.add(id);
+  const line = lines.get(id);
+  if (line) {
+    line.view.video = true;
+    publish();
+  }
 }
 
 /** Hang up / reject / cancel a line. */
@@ -227,14 +304,18 @@ export async function hangup(id: string): Promise<void> {
 export async function resume(id: string): Promise<void> {
   if (!sm) return;
   await holdOthers(id);
-  await sm.unhold(get(id));
+  await serialize(id, () => sm!.unhold(get(id)));
 }
 
-/** Toggle hold/resume for a line. */
+/** Toggle hold/resume for a line. The hold/unhold choice is made when the
+ * (serialized) re-INVITE actually runs, so it reflects the settled state. */
 export async function toggleHold(id: string): Promise<void> {
   if (!sm) return;
-  if (lines.get(id)?.view.state === "held") await resume(id);
-  else await sm.hold(get(id));
+  if (lines.get(id)?.view.state === "held") {
+    await resume(id);
+  } else {
+    await serialize(id, () => sm!.hold(get(id)));
+  }
 }
 
 /** Toggle mute of the local mic for a line. */
