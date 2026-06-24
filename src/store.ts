@@ -7,22 +7,28 @@ export type Registration =
   | "registered"
   | "failed";
 
-export type CallState = "idle" | "incoming" | "outgoing" | "active";
+// Per-line lifecycle. "establishing" = outgoing, ringing at the far end;
+// "ringing" = incoming, not yet answered; "active" = connected, in foreground;
+// "held" = connected but on hold (far end hears MOH).
+export type LineState = "establishing" | "ringing" | "active" | "held";
+
+export interface LineView {
+  id: string; // sip.js Session.id
+  peer: string; // remote extension
+  outgoing: boolean;
+  state: LineState;
+  muted: boolean;
+}
 
 interface PhoneState {
   connected: boolean;
   registration: Registration;
-  call: CallState;
-  peer?: string; // remote party (when known)
-  muted: boolean;
-  held: boolean;
+  lines: LineView[];
   error?: string;
 
   setConnected: (v: boolean) => void;
   setRegistration: (r: Registration) => void;
-  setCall: (c: CallState, peer?: string) => void;
-  setMuted: (v: boolean) => void;
-  setHeld: (v: boolean) => void;
+  setLines: (lines: LineView[]) => void;
   setError: (e?: string) => void;
   reset: () => void;
 }
@@ -30,20 +36,13 @@ interface PhoneState {
 export const usePhone = create<PhoneState>((set) => ({
   connected: false,
   registration: "unregistered",
-  call: "idle",
-  peer: undefined,
-  muted: false,
-  held: false,
+  lines: [],
   error: undefined,
 
   setConnected: (connected) => set({ connected }),
   setRegistration: (registration) => set({ registration }),
-  // a state transition always starts unmuted/unheld (toggles flip during a call)
-  setCall: (call, peer) =>
-    set({ call, peer: call === "idle" ? undefined : peer, muted: false, held: false }),
-  setMuted: (muted) => set({ muted }),
-  setHeld: (held) => set({ held }),
+  setLines: (lines) => set({ lines }),
   setError: (error) => set({ error }),
   reset: () =>
-    set({ connected: false, registration: "unregistered", call: "idle", peer: undefined, muted: false, held: false }),
+    set({ connected: false, registration: "unregistered", lines: [], error: undefined }),
 }));

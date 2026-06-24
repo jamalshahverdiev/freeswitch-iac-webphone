@@ -3,16 +3,18 @@
 A custom WebRTC softphone (built on [SIP.js](https://sipjs.com)) for the
 FreeSWITCH IaC Platform. See [PLAN.md](./PLAN.md) for the full roadmap.
 
-**Status: Phase 1 (+ early Phase 2)** — register over WSS and place/receive a
-one-to-one audio call, with:
+**Status: Phase 2** — register over WSS and place/receive calls, with:
 
 - ringback (caller) and ringtone (callee), generated via Web Audio;
 - a dial pad with audible DTMF touch-tones — builds the number when idle, sends
   DTMF to the far end during a call (e.g. to drive an IVR);
-- mute / unmute, hold / resume, and blind transfer (REFER).
+- mute / unmute, hold / resume;
+- **two concurrent lines** (a second call auto-holds the first);
+- **blind transfer** and **attended (consultative) transfer** — hold the call,
+  dial the target, talk, then connect them via REFER-with-Replaces.
 
-No login yet (credentials are entered in the settings form and kept in memory
-only); Keycloak/RBAC auth arrives in Phase 1.5.
+Sign in with Keycloak (OIDC); the SIP credentials are vended by the BFF. The
+manual settings form survives as an "advanced / bring your own PBX" option.
 
 ## Run
 
@@ -60,15 +62,18 @@ runtime in the settings form:
 - `npm run build` — typecheck + production build to `dist/`
 - `npm run typecheck` — types only
 
-## Architecture (Phase 1)
+## Architecture
 
 ```
 src/
   config.ts      settings (env defaults + localStorage; password NOT persisted)
-  store.ts       Zustand: connection / registration / call state
-  sip/phone.ts   sip.js SimpleUser wrapper: connect, register, call, answer, hangup
-  App.tsx        UI: settings form, register status, dialer, active/incoming call
+  store.ts       Zustand: connection / registration / per-line state (LineView[])
+  sip/phone.ts   sip.js SessionManager wrapper: register + up to two concurrent
+                 lines (call/answer/hangup/hold/mute/DTMF/blind+attended transfer)
+  App.tsx        UI: sign-in, register status, per-line controls + transfer flows
 ```
 
-Phase 1 uses sip.js `SimpleUser` (the Web helper) for speed; later phases drop to
-the lower-level API for DTMF / hold / transfer / video / conference.
+Phase 1 started on sip.js `SimpleUser` (single session); Phase 2 moved to
+`SessionManager` (the multi-session layer underneath it) to support two
+concurrent lines and consultative transfer. Phase 3 (video / conference) builds
+on the same lower-level layer.
