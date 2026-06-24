@@ -7,7 +7,7 @@
 // stream attachment, hold/mute track toggling, DTMF, REFER) so we only track a
 // light per-line view for the UI and drive the store from its delegate.
 
-import { SessionManager, SessionManagerOptions } from "sip.js/lib/platform/web";
+import { SessionManager, SessionManagerOptions, SessionDescriptionHandler } from "sip.js/lib/platform/web";
 import { Invitation, Session } from "sip.js";
 import type { Settings } from "../config";
 import { usePhone, type LineState, type LineView } from "../store";
@@ -27,29 +27,12 @@ interface Line {
 }
 const lines = new Map<string, Line>();
 
-// Lines that negotiated a camera track. Populated by call()/answer() before the
-// session reaches Established, so the media setup below knows to wire a <video>.
-const videoLines = new Set<string>();
-
-// One detached <audio> sink per audio-only session. Held lines have their
-// receiver tracks disabled by SessionManager, so only the foreground line is
-// audible even though every line has its own sink.
-const audioEls = new Map<string, HTMLAudioElement>();
-// One <video> pair per video session, owned here and mounted into the DOM by the
-// UI (see getVideoEls). The remote element carries both audio and video — when
-// media.remote returns a video element, SessionManager attaches the full remote
-// stream to it, so video lines do not also use an audio sink.
+// One <video> pair per session, owned here and mounted into the DOM by the UI
+// only for video lines (see getVideoEls). We always use a <video> as the remote
+// sink — SessionManager attaches the full remote stream (audio + any video) to
+// it and plays it even while detached, so audio-only calls work unmounted and a
+// later mid-call video escalation renders without re-wiring the sink.
 const videoEls = new Map<string, { local: HTMLVideoElement; remote: HTMLVideoElement }>();
-
-function audioFor(session: Session): HTMLAudioElement {
-  let el = audioEls.get(session.id);
-  if (!el) {
-    el = new Audio();
-    el.autoplay = true;
-    audioEls.set(session.id, el);
-  }
-  return el;
-}
 
 function videoPairFor(session: Session): { local: HTMLVideoElement; remote: HTMLVideoElement } {
   let pair = videoEls.get(session.id);
@@ -67,29 +50,31 @@ function videoPairFor(session: Session): { local: HTMLVideoElement; remote: HTML
   return pair;
 }
 
-function remoteMediaFor(session: Session): { audio?: HTMLAudioElement; video?: HTMLVideoElement } {
-  if (videoLines.has(session.id)) return { video: videoPairFor(session).remote };
-  return { audio: audioFor(session) };
-}
-
-function localMediaFor(session: Session): { video?: HTMLVideoElement } {
-  if (videoLines.has(session.id)) return { video: videoPairFor(session).local };
-  return {};
-}
-
 function dropMedia(id: string): void {
-  const el = audioEls.get(id);
-  if (el) {
-    el.srcObject = null;
-    audioEls.delete(id);
-  }
   const pair = videoEls.get(id);
   if (pair) {
     pair.local.srcObject = null;
     pair.remote.srcObject = null;
     videoEls.delete(id);
   }
-  videoLines.delete(id);
+}
+
+function pcOf(session: Session): RTCPeerConnection | undefined {
+  return (session.sessionDescriptionHandler as SessionDescriptionHandler | undefined)?.peerConnection;
+}
+
+function senderTrack(session: Session, kind: "audio" | "video"): MediaStreamTrack | undefined {
+  return pcOf(session)
+    ?.getSenders()
+    .find((s) => s.track?.kind === kind)?.track ?? undefined;
+}
+
+// SessionManager.mute / hold toggle ALL sender tracks together, so after they
+// run we must restore the camera to the user's chosen state (it isn't tracked
+// by SessionManager). No-op on audio lines (no video sender).
+function reassertCamera(line: Line): void {
+  const v = senderTrack(line.session, "video");
+  if (v) v.enabled = !line.view.cameraOff;
 }
 
 /** The <video> elements (local + remote) for a video line, for the UI to mount. */
@@ -152,11 +137,11 @@ export async function start(settings: Settings, password: string): Promise<void>
     // a second line but reject a third".
     maxSimultaneousSessions: 1,
     media: {
-      // Default capture is audio-only; a video call overrides constraints per
-      // call/answer (see call/answer below) so plain calls never open a camera.
+      // Default capture is audio-only; a video call/escalation overrides
+      // constraints per call/answer/addVideo so plain calls never open a camera.
       constraints: { audio: true, video: false },
-      local: (session) => localMediaFor(session),
-      remote: (session) => remoteMediaFor(session),
+      local: (session) => ({ video: videoPairFor(session).local }),
+      remote: (session) => ({ video: videoPairFor(session).remote }),
     },
     userAgentOptions: {
       authorizationUsername: settings.user,
@@ -178,19 +163,24 @@ export async function start(settings: Settings, password: string): Promise<void>
         if (session instanceof Invitation) return;
         lines.set(session.id, {
           session,
-          view: { id: session.id, peer: peerOf(session), outgoing: true, state: "establishing", muted: false, video: false },
+          view: { id: session.id, peer: peerOf(session), outgoing: true, state: "establishing", muted: false, video: false, cameraOff: false },
         });
         publish();
       },
       onCallReceived: (session) => {
         lines.set(session.id, {
           session,
-          view: { id: session.id, peer: peerOf(session), outgoing: false, state: "ringing", muted: false, video: false },
+          view: { id: session.id, peer: peerOf(session), outgoing: false, state: "ringing", muted: false, video: false, cameraOff: false },
         });
         publish();
       },
       onCallAnswered: (session) => setState(session.id, "active"),
-      onCallHold: (session, held) => setState(session.id, held ? "held" : "active"),
+      onCallHold: (session, held) => {
+        setState(session.id, held ? "held" : "active");
+        // unhold re-enables every sender track — restore the camera choice
+        const l = lines.get(session.id);
+        if (!held && l) reassertCamera(l);
+      },
       onCallHangup: (session) => {
         lines.delete(session.id);
         dropMedia(session.id);
@@ -216,7 +206,7 @@ export async function stop(): Promise<void> {
   ringer.stop();
   ringMode = "none";
   lines.clear();
-  [...new Set([...audioEls.keys(), ...videoEls.keys()])].forEach(dropMedia);
+  [...videoEls.keys()].forEach(dropMedia);
   if (!sm) return;
   try {
     await sm.unregister();
@@ -280,17 +270,44 @@ export async function answer(id: string, video = false): Promise<void> {
   ringer.stop();
   ringMode = "none";
   await holdOthers(id);
-  if (video) markVideo(id); // before answer() so media setup wires a <video>
   await sm.answer(get(id), {
     sessionDescriptionHandlerOptions: { constraints: { audio: true, video } },
   });
+  if (video) markVideo(id);
 }
 
 function markVideo(id: string): void {
-  videoLines.add(id);
   const line = lines.get(id);
   if (line) {
     line.view.video = true;
+    publish();
+  }
+}
+
+/** Escalate an in-progress audio call to video: re-INVITE adding a camera
+ * track. Serialized so it can't glare with a concurrent hold/unhold. */
+export async function addVideo(id: string): Promise<void> {
+  if (!sm) return;
+  const session = get(id);
+  await serialize(id, () =>
+    session
+      .invite({ sessionDescriptionHandlerOptions: { constraints: { audio: true, video: true } } })
+      .then(() => {}),
+  );
+  markVideo(id);
+}
+
+/** Toggle the local camera track on a video line (off = far end sees a frozen
+ * frame; no renegotiation). */
+export function toggleCamera(id: string): void {
+  const track = pcOf(get(id))
+    ?.getSenders()
+    .find((s) => s.track?.kind === "video")?.track;
+  if (!track) return;
+  track.enabled = !track.enabled;
+  const line = lines.get(id);
+  if (line) {
+    line.view.cameraOff = !track.enabled;
     publish();
   }
 }
@@ -326,6 +343,7 @@ export function toggleMute(id: string): void {
   if (line.view.muted) sm.unmute(line.session);
   else sm.mute(line.session);
   line.view.muted = !line.view.muted;
+  reassertCamera(line); // mute toggled every sender track — restore camera state
   publish();
 }
 
