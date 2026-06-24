@@ -137,8 +137,8 @@ export async function start(settings: Settings, password: string): Promise<void>
     // a second line but reject a third".
     maxSimultaneousSessions: 1,
     media: {
-      // Default capture is audio-only; a video call/escalation overrides
-      // constraints per call/answer/addVideo so plain calls never open a camera.
+      // Default capture is audio-only; a video call overrides constraints per
+      // call/answer so plain calls never open a camera.
       constraints: { audio: true, video: false },
       local: (session) => ({ video: videoPairFor(session).local }),
       remote: (session) => ({ video: videoPairFor(session).remote }),
@@ -282,19 +282,6 @@ function markVideo(id: string): void {
     line.view.video = true;
     publish();
   }
-}
-
-/** Escalate an in-progress audio call to video: re-INVITE adding a camera
- * track. Serialized so it can't glare with a concurrent hold/unhold. */
-export async function addVideo(id: string): Promise<void> {
-  if (!sm) return;
-  const session = get(id);
-  await serialize(id, () =>
-    session
-      .invite({ sessionDescriptionHandlerOptions: { constraints: { audio: true, video: true } } })
-      .then(() => {}),
-  );
-  markVideo(id);
 }
 
 /** Toggle the local camera track on a video line (off = far end sees a frozen
