@@ -11,7 +11,11 @@ FreeSWITCH IaC Platform. See [PLAN.md](./PLAN.md) for the full roadmap.
 - mute / unmute, hold / resume;
 - **two concurrent lines** (a second call auto-holds the first);
 - **blind transfer** and **attended (consultative) transfer** — hold the call,
-  dial the target, talk, then connect them via REFER-with-Replaces.
+  dial the target, talk, then connect them via REFER-with-Replaces;
+- **video calls** (Phase 3, early) — tick *Video* before dialing, or *Answer
+  (video)* an incoming call, to negotiate a camera track and render the remote
+  feed with a local self-view. Conference video grid, device selection and
+  screen share come next.
 
 Sign in with Keycloak (OIDC); the SIP credentials are vended by the BFF. The
 manual settings form survives as an "advanced / bring your own PBX" option.
