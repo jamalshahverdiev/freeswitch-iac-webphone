@@ -6,6 +6,13 @@ import { MAX_LINES } from "./sip/phone";
 import { currentUser, finishLogin, isCallback, login, logout } from "./auth";
 import { fetchSession } from "./session";
 import { SupervisorPanel } from "./SupervisorPanel";
+import {
+  listDevices,
+  loadDevicePrefs,
+  revealLabels,
+  saveDevicePrefs,
+  type DevicePrefs,
+} from "./devices";
 
 type AuthStatus = "loading" | "anon" | "in";
 
@@ -27,6 +34,9 @@ export function App() {
 
   // Bootstrap: handle the OIDC callback, then auto-register from the BFF session.
   useEffect(() => {
+    // apply persisted device selection before any call is placed
+    const prefs = loadDevicePrefs();
+    phone.setDevices(prefs.micId, prefs.camId);
     (async () => {
       try {
         if (isCallback()) await finishLogin();
@@ -120,6 +130,9 @@ export function App() {
 
       {/* ---- Call UI (when registered) ---- */}
       {registered && <CallPanel />}
+
+      {/* ---- Device selection ---- */}
+      {registered && <DevicePicker />}
 
       {/* ---- Advanced: manual / bring-your-own-PBX (no Keycloak) ---- */}
       {!registered && (
@@ -391,6 +404,74 @@ function CallPanel() {
         </>
       )}
     </section>
+  );
+}
+
+/** Pick the capture microphone / camera. Selection persists and is applied live
+ * to any connected call (and to future calls) via phone.setDevices/applyDevices. */
+function DevicePicker() {
+  const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
+  const [cams, setCams] = useState<MediaDeviceInfo[]>([]);
+  const [prefs, setPrefs] = useState<DevicePrefs>(loadDevicePrefs);
+  const needLabels = [...mics, ...cams].some((d) => !d.label);
+
+  async function refresh() {
+    const list = await listDevices();
+    setMics(list.mics);
+    setCams(list.cams);
+  }
+
+  useEffect(() => {
+    void refresh();
+    const onChange = () => void refresh();
+    navigator.mediaDevices.addEventListener("devicechange", onChange);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", onChange);
+  }, []);
+
+  function update(next: DevicePrefs) {
+    setPrefs(next);
+    saveDevicePrefs(next);
+    phone.setDevices(next.micId, next.camId);
+    void phone.applyDevices();
+  }
+
+  return (
+    <details className="card devices">
+      <summary>Devices</summary>
+      <label>
+        Microphone
+        <select
+          value={prefs.micId ?? ""}
+          onChange={(e) => update({ ...prefs, micId: e.target.value || undefined })}
+        >
+          <option value="">Default</option>
+          {mics.map((d, i) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || `Microphone ${i + 1}`}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Camera
+        <select
+          value={prefs.camId ?? ""}
+          onChange={(e) => update({ ...prefs, camId: e.target.value || undefined })}
+        >
+          <option value="">Default</option>
+          {cams.map((d, i) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || `Camera ${i + 1}`}
+            </option>
+          ))}
+        </select>
+      </label>
+      {needLabels && (
+        <button className="secondary" onClick={() => void revealLabels().then(refresh)}>
+          Show device names
+        </button>
+      )}
+    </details>
   );
 }
 
