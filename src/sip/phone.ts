@@ -18,6 +18,24 @@ let domain = "";
 
 export const MAX_LINES = 2;
 
+// Selected capture devices (deviceId). Empty = browser default. Set from the UI
+// via setDevices; applied to new calls' constraints and live-switched on active
+// calls via applyDevices.
+let selectedMic: string | undefined;
+let selectedCam: string | undefined;
+
+export function setDevices(micId?: string, camId?: string): void {
+  selectedMic = micId || undefined;
+  selectedCam = camId || undefined;
+}
+
+function audioConstraint(): MediaTrackConstraints | boolean {
+  return selectedMic ? { deviceId: { exact: selectedMic } } : true;
+}
+function videoConstraint(): MediaTrackConstraints | boolean {
+  return selectedCam ? { deviceId: { exact: selectedCam } } : true;
+}
+
 // Per-line UI metadata, keyed by Session.id. The Session objects themselves are
 // owned by SessionManager; we keep a parallel view to render and to resolve a
 // line id back to its Session for control actions.
@@ -255,7 +273,9 @@ export async function call(target: string, video = false): Promise<void> {
   await holdOthers();
   try {
     const inviter = await sm.call(`sip:${target}@${domain}`, undefined, {
-      sessionDescriptionHandlerOptions: { constraints: { audio: true, video } },
+      sessionDescriptionHandlerOptions: {
+        constraints: { audio: audioConstraint(), video: video ? videoConstraint() : false },
+      },
     });
     if (video) markVideo(inviter.id);
   } catch (err) {
@@ -271,7 +291,9 @@ export async function answer(id: string, video = false): Promise<void> {
   ringMode = "none";
   await holdOthers(id);
   await sm.answer(get(id), {
-    sessionDescriptionHandlerOptions: { constraints: { audio: true, video } },
+    sessionDescriptionHandlerOptions: {
+      constraints: { audio: audioConstraint(), video: video ? videoConstraint() : false },
+    },
   });
   if (video) markVideo(id);
 }
@@ -333,13 +355,49 @@ export async function stopShare(id: string): Promise<void> {
   const sender = videoSender(get(id));
   if (!sender) return;
   const screen = sender.track;
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint() });
   const cam = stream.getVideoTracks()[0] ?? null;
   await sender.replaceTrack(cam);
   screen?.stop();
   videoPairFor(get(id)).local.srcObject = cam ? new MediaStream([cam]) : null;
   line.view.sharing = false;
   publish();
+}
+
+/** Live-switch the selected mic (and camera, on video lines not screen-sharing)
+ * on every connected line via replaceTrack — no re-INVITE. Call after setDevices
+ * changes the selection. Preserves each line's mute / camera-off state. */
+export async function applyDevices(): Promise<void> {
+  for (const line of lines.values()) {
+    if (line.view.state !== "active" && line.view.state !== "held") continue;
+    const pc = pcOf(line.session);
+    if (!pc) continue;
+
+    const aSender = pc.getSenders().find((s) => s.track?.kind === "audio");
+    if (aSender) {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint() });
+      const track = stream.getAudioTracks()[0];
+      if (track) {
+        const old = aSender.track;
+        track.enabled = !line.view.muted;
+        await aSender.replaceTrack(track);
+        old?.stop();
+      }
+    }
+
+    if (line.view.video && !line.view.sharing) {
+      const vSender = videoSender(line.session);
+      if (vSender) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint() });
+        const track = stream.getVideoTracks()[0] ?? null;
+        const old = vSender.track;
+        if (track) track.enabled = !line.view.cameraOff;
+        await vSender.replaceTrack(track);
+        videoPairFor(line.session).local.srcObject = track ? new MediaStream([track]) : null;
+        old?.stop();
+      }
+    }
+  }
 }
 
 /** Hang up / reject / cancel a line. */

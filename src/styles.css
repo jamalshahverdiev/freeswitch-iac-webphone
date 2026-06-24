@@ -156,3 +156,9 @@ button.danger { background: var(--danger); }
 .video-local { position: absolute; right: 8px; bottom: 8px; width: 28%; max-width: 140px; border-radius: 6px; border: 1px solid #00000080; object-fit: cover; transform: scaleX(-1); /* mirror self-view */ }
 .videotoggle { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--muted); margin-top: 6px; }
 .videotoggle input { width: auto; }
+
+/* ---- Device picker ---- */
+.devices summary { cursor: pointer; font-weight: 600; }
+.devices label { display: block; margin-top: 10px; font-size: 0.82rem; color: var(--muted); }
+.devices select { display: block; width: 100%; margin-top: 4px; padding: 8px; border-radius: 8px; background: #21262f; color: var(--fg); border: 1px solid #2c313b; font-size: 0.9rem; }
+.devices button { margin-top: 10px; }
