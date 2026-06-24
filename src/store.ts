@@ -19,6 +19,7 @@ export interface LineView {
   state: LineState;
   muted: boolean;
   video: boolean; // negotiated with a camera track (renders video tiles)
+  cameraOff: boolean; // local camera track disabled while on a video line
 }
 
 interface PhoneState {
