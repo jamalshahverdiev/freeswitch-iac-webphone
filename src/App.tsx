@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { loadSettings, saveSettings, type Settings } from "./config";
-import { usePhone } from "./store";
+import { usePhone, type LineView } from "./store";
 import * as phone from "./sip/phone";
+import { MAX_LINES } from "./sip/phone";
 import { currentUser, finishLogin, isCallback, login, logout } from "./auth";
 import { fetchSession } from "./session";
 import { SupervisorPanel } from "./SupervisorPanel";
@@ -9,7 +10,6 @@ import { SupervisorPanel } from "./SupervisorPanel";
 type AuthStatus = "loading" | "anon" | "in";
 
 export function App() {
-  const audioRef = useRef<HTMLAudioElement>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
   const [authUser, setAuthUser] = useState("");
   const [roles, setRoles] = useState<string[]>([]);
@@ -18,13 +18,9 @@ export function App() {
 
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [password, setPassword] = useState("");
-  const [target, setTarget] = useState("");
 
-  const { connected, registration, call, peer, muted, held, error } = usePhone();
-  const [xfer, setXfer] = useState(false);
-  const [xferTo, setXferTo] = useState("");
+  const { connected, registration, error } = usePhone();
   const registered = registration === "registered";
-  const busy = call !== "idle";
 
   // Bootstrap: handle the OIDC callback, then auto-register from the BFF session.
   useEffect(() => {
@@ -55,7 +51,6 @@ export function App() {
     await phone.start(
       { wssUrl: s.sip.wss_url, domain: s.sip.domain, user: s.sip.extension },
       s.sip.password,
-      audioRef.current!,
     );
   }
 
@@ -63,7 +58,7 @@ export function App() {
     e.preventDefault();
     saveSettings(settings);
     try {
-      await phone.start(settings, password, audioRef.current!);
+      await phone.start(settings, password);
     } catch {
       /* surfaced via store */
     }
@@ -121,97 +116,7 @@ export function App() {
       )}
 
       {/* ---- Call UI (when registered) ---- */}
-      {registered && (
-        <section className="card">
-          {call === "idle" && (
-            <>
-              <form
-                className="dialer"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (target) void phone.call(target.trim(), settings.domain);
-                }}
-              >
-                <input
-                  placeholder="Number to call, e.g. 4202"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  inputMode="tel"
-                />
-                <button type="submit" disabled={!target}>
-                  Call
-                </button>
-              </form>
-              <Dialpad
-                onPress={(k) => {
-                  phone.tone(k);
-                  setTarget((t) => t + k);
-                }}
-              />
-            </>
-          )}
-
-          {busy && (
-            <div className="callbox">
-              <div className="callstate">
-                {call === "incoming" && "Incoming call…"}
-                {call === "outgoing" && `Calling ${peer ?? ""}…`}
-                {call === "active" && `In call${peer ? ` · ${peer}` : ""}`}
-              </div>
-              <div className="callbtns">
-                {call === "incoming" && (
-                  <button className="ok" onClick={() => void phone.answer()}>
-                    Answer
-                  </button>
-                )}
-                {call === "active" && (
-                  <>
-                    <button className="secondary" onClick={() => phone.toggleMute()}>
-                      {muted ? "Unmute" : "Mute"}
-                    </button>
-                    <button className="secondary" onClick={() => void phone.toggleHold()}>
-                      {held ? "Resume" : "Hold"}
-                    </button>
-                    <button className="secondary" onClick={() => setXfer((v) => !v)}>
-                      Transfer
-                    </button>
-                  </>
-                )}
-                <button className="danger" onClick={() => void phone.hangup()}>
-                  {call === "incoming" ? "Reject" : "Hang up"}
-                </button>
-              </div>
-
-              {call === "active" && xfer && (
-                <form
-                  className="dialer"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (xferTo) {
-                      void phone.blindTransfer(xferTo.trim(), settings.domain);
-                      setXfer(false);
-                      setXferTo("");
-                    }
-                  }}
-                >
-                  <input
-                    placeholder="Transfer to, e.g. 4100"
-                    value={xferTo}
-                    onChange={(e) => setXferTo(e.target.value)}
-                    inputMode="tel"
-                    autoFocus
-                  />
-                  <button type="submit" disabled={!xferTo}>
-                    Go
-                  </button>
-                </form>
-              )}
-
-              {call === "active" && <Dialpad onPress={(k) => void phone.sendDtmf(k)} />}
-            </div>
-          )}
-        </section>
-      )}
+      {registered && <CallPanel />}
 
       {/* ---- Advanced: manual / bring-your-own-PBX (no Keycloak) ---- */}
       {!registered && (
@@ -259,10 +164,197 @@ export function App() {
           </form>
         </details>
       )}
-
-      {/* SimpleUser attaches the remote stream here */}
-      <audio ref={audioRef} autoPlay />
     </div>
+  );
+}
+
+/** Up to two lines, with per-line controls and blind / attended transfer. */
+function CallPanel() {
+  const lines = usePhone((s) => s.lines);
+
+  const [dial, setDial] = useState("");
+  const [xferMenuFor, setXferMenuFor] = useState<string | null>(null);
+  const [blindFor, setBlindFor] = useState<string | null>(null);
+  const [blindTo, setBlindTo] = useState("");
+  // The line being transferred away during a consultative (attended) transfer.
+  const [xferOriginId, setXferOriginId] = useState<string | null>(null);
+
+  // Drop the attended-transfer origin once that line is gone (transferred/hung up).
+  useEffect(() => {
+    if (xferOriginId && !lines.some((l) => l.id === xferOriginId)) setXferOriginId(null);
+  }, [lines, xferOriginId]);
+
+  const canAddLine = lines.length < MAX_LINES;
+  const consultingFor = xferOriginId ? lines.find((l) => l.id === xferOriginId) : undefined;
+  // The far end we'd transfer the held call to: the other line, once connected.
+  const consultLine = xferOriginId
+    ? lines.find((l) => l.id !== xferOriginId && l.state === "active")
+    : undefined;
+
+  function startAttended(id: string) {
+    setXferMenuFor(null);
+    setXferOriginId(id);
+    const line = lines.find((l) => l.id === id);
+    if (line?.state === "active") void phone.toggleHold(id); // park the caller on MOH
+  }
+
+  return (
+    <section className="card">
+      {lines.length === 0 && <p className="muted">No active calls.</p>}
+
+      {lines.map((line) => (
+        <div className="callbox" key={line.id}>
+          <div className="callstate">
+            {stateLabel(line)} {line.muted && <span className="chip">muted</span>}
+            {xferOriginId === line.id && <span className="chip">transferring…</span>}
+          </div>
+
+          <div className="callbtns">
+            {line.state === "ringing" && (
+              <button className="ok" onClick={() => void phone.answer(line.id)}>
+                Answer
+              </button>
+            )}
+            {line.state === "active" && (
+              <>
+                <button className="secondary" onClick={() => phone.toggleMute(line.id)}>
+                  {line.muted ? "Unmute" : "Mute"}
+                </button>
+                <button className="secondary" onClick={() => void phone.toggleHold(line.id)}>
+                  Hold
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => setXferMenuFor((v) => (v === line.id ? null : line.id))}
+                >
+                  Transfer
+                </button>
+              </>
+            )}
+            {line.state === "held" && (
+              <button className="secondary" onClick={() => void phone.resume(line.id)}>
+                Resume
+              </button>
+            )}
+            <button className="danger" onClick={() => void phone.hangup(line.id)}>
+              {line.state === "ringing" ? "Reject" : line.state === "establishing" ? "Cancel" : "Hang up"}
+            </button>
+          </div>
+
+          {/* Transfer mode chooser */}
+          {xferMenuFor === line.id && (
+            <div className="callbtns">
+              <button
+                className="secondary"
+                onClick={() => {
+                  setBlindFor(line.id);
+                  setBlindTo("");
+                  setXferMenuFor(null);
+                }}
+              >
+                Blind
+              </button>
+              <button
+                className="secondary"
+                onClick={() => startAttended(line.id)}
+                disabled={!canAddLine}
+                title={canAddLine ? "" : "Both lines are in use"}
+              >
+                Attended
+              </button>
+            </div>
+          )}
+
+          {/* Blind transfer target */}
+          {blindFor === line.id && (
+            <form
+              className="dialer"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (blindTo) {
+                  void phone.blindTransfer(line.id, blindTo.trim());
+                  setBlindFor(null);
+                  setBlindTo("");
+                }
+              }}
+            >
+              <input
+                placeholder="Blind transfer to, e.g. 4100"
+                value={blindTo}
+                onChange={(e) => setBlindTo(e.target.value)}
+                inputMode="tel"
+                autoFocus
+              />
+              <button type="submit" disabled={!blindTo}>
+                Go
+              </button>
+            </form>
+          )}
+
+          {/* DTMF keypad for the connected line */}
+          {line.state === "active" && (
+            <Dialpad onPress={(k) => void phone.sendDtmf(line.id, k)} />
+          )}
+        </div>
+      ))}
+
+      {/* Complete an attended transfer once the consultation call is up */}
+      {consultingFor && consultLine && (
+        <div className="callbox">
+          <div className="callstate">
+            Transfer {consultingFor.peer} → {consultLine.peer}?
+          </div>
+          <div className="callbtns">
+            <button
+              className="ok"
+              onClick={() => void phone.attendedTransfer(consultingFor.id, consultLine.id)}
+            >
+              Complete transfer
+            </button>
+            <button className="secondary" onClick={() => setXferOriginId(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* New call / consultation dialer */}
+      {canAddLine && (
+        <>
+          {consultingFor && (
+            <p className="muted">
+              Consultation call (will transfer {consultingFor.peer} to this number):
+            </p>
+          )}
+          <form
+            className="dialer"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (dial) {
+                void phone.call(dial.trim());
+                setDial("");
+              }
+            }}
+          >
+            <input
+              placeholder="Number to call, e.g. 4202"
+              value={dial}
+              onChange={(e) => setDial(e.target.value)}
+              inputMode="tel"
+            />
+            <button type="submit" disabled={!dial}>
+              Call
+            </button>
+          </form>
+          <Dialpad
+            onPress={(k) => {
+              phone.tone(k);
+              setDial((t) => t + k);
+            }}
+          />
+        </>
+      )}
+    </section>
   );
 }
 
@@ -278,6 +370,19 @@ function Dialpad({ onPress }: { onPress: (key: string) => void }) {
       ))}
     </div>
   );
+}
+
+function stateLabel(line: LineView): string {
+  switch (line.state) {
+    case "ringing":
+      return `Incoming · ${line.peer}`;
+    case "establishing":
+      return `Calling ${line.peer}…`;
+    case "active":
+      return `In call · ${line.peer}`;
+    case "held":
+      return `On hold · ${line.peer}`;
+  }
 }
 
 function labelFor(r: string): string {
