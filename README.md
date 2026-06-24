@@ -14,10 +14,12 @@ FreeSWITCH IaC Platform. See [PLAN.md](./PLAN.md) for the full roadmap.
   dial the target, talk, then connect them via REFER-with-Replaces;
 - **video calls** (Phase 3) — tick *Video* before dialing, or *Answer (video)*
   an incoming call, to negotiate a camera track and render the remote feed with
-  a local self-view;
-- **mid-call escalation** — *Add video* re-INVITEs an in-progress audio call to
-  add a camera; *Camera off/on* toggles the local video track. Conference video
-  grid, device selection and screen share come next.
+  a local self-view; *Camera off/on* toggles the local video track. Conference
+  video grid, device selection and screen share come next.
+
+> Mid-call escalation (adding video to an already-connected audio call) is not
+> supported: FreeSWITCH's bridge does not propagate a mid-call video re-INVITE to
+> the far leg, so video must be chosen when the call is placed/answered.
 
 Sign in with Keycloak (OIDC); the SIP credentials are vended by the BFF. The
 manual settings form survives as an "advanced / bring your own PBX" option.

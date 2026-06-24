@@ -233,13 +233,9 @@ function CallPanel() {
                 <button className="secondary" onClick={() => void phone.toggleHold(line.id)}>
                   Hold
                 </button>
-                {line.video ? (
+                {line.video && (
                   <button className="secondary" onClick={() => phone.toggleCamera(line.id)}>
                     {line.cameraOff ? "Camera on" : "Camera off"}
-                  </button>
-                ) : (
-                  <button className="secondary" onClick={() => void phone.addVideo(line.id)}>
-                    Add video
                   </button>
                 )}
                 <button
