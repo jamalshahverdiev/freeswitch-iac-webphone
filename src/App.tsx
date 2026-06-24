@@ -190,6 +190,7 @@ function CallPanel() {
 
   const [dial, setDial] = useState("");
   const [withVideo, setWithVideo] = useState(false);
+  const [conf, setConf] = useState("3500");
   const [xferMenuFor, setXferMenuFor] = useState<string | null>(null);
   const [blindFor, setBlindFor] = useState<string | null>(null);
   const [blindTo, setBlindTo] = useState("");
@@ -401,6 +402,28 @@ function CallPanel() {
               setDial((t) => t + k);
             }}
           />
+          {!consultingFor && (
+            <>
+              <p className="muted confhint">Join a video conference room:</p>
+              <form
+                className="dialer"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (conf) void phone.call(conf.trim(), true);
+                }}
+              >
+                <input
+                  placeholder="Conference room, e.g. 3500"
+                  value={conf}
+                  onChange={(e) => setConf(e.target.value)}
+                  inputMode="tel"
+                />
+                <button type="submit" disabled={!conf}>
+                  Join with video
+                </button>
+              </form>
+            </>
+          )}
         </>
       )}
     </section>

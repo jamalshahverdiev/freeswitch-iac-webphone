@@ -17,8 +17,13 @@ FreeSWITCH IaC Platform. See [PLAN.md](./PLAN.md) for the full roadmap.
   a local self-view; *Camera off/on* toggles the local video track;
 - **screen sharing** — *Share screen* on a video call swaps the camera for a
   display-capture track (seamless `replaceTrack`, no re-INVITE); *Stop sharing*
-  (or the browser's own stop button) restores the camera. Conference video grid
-  and device selection come next.
+  (or the browser's own stop button) restores the camera;
+- **device selection** — pick the microphone / camera (persisted, applied live
+  to active calls via `replaceTrack`) in the *Devices* panel;
+- **video conferences** — *Join with video* dials a `mod_conference` room (e.g.
+  `3500`, served from the platform's `video-grid` profile) and renders the
+  composited video-grid mosaic; *Fullscreen* (or double-click the tile) enlarges
+  it.
 
 > Mid-call escalation (adding video to an already-connected audio call) is not
 > supported: FreeSWITCH's bridge does not propagate a mid-call video re-INVITE to
