@@ -162,3 +162,18 @@ button.danger { background: var(--danger); }
 .devices label { display: block; margin-top: 10px; font-size: 0.82rem; color: var(--muted); }
 .devices select { display: block; width: 100%; margin-top: 4px; padding: 8px; border-radius: 8px; background: #21262f; color: var(--fg); border: 1px solid #2c313b; font-size: 0.9rem; }
 .devices button { margin-top: 10px; }
+
+/* ---- Call history ---- */
+.history summary { cursor: pointer; font-weight: 600; }
+.hist-head { display: flex; justify-content: flex-end; margin: 8px 0; }
+.hist-head button { font-size: 0.78rem; padding: 5px 10px; }
+.histlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.histrow { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid #21262f; font-size: 0.85rem; }
+.histrow .dir { font-size: 1rem; width: 1.2em; text-align: center; }
+.histrow .dir.out { color: var(--accent); }
+.histrow .dir.in { color: var(--ok); }
+.histrow .dir.missed { color: #e5534b; }
+.histpeer { flex: 1; text-align: left; background: none; border: none; color: var(--fg); font: inherit; cursor: pointer; padding: 0; }
+.histpeer:hover { color: var(--accent); text-decoration: underline; }
+.histtime { color: var(--muted); font-size: 0.78rem; }
+.histdur { color: var(--muted); font-size: 0.78rem; min-width: 3.5em; text-align: right; }
