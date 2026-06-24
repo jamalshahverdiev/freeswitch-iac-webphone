@@ -13,6 +13,7 @@ import {
   saveDevicePrefs,
   type DevicePrefs,
 } from "./devices";
+import { fetchCdr, type CdrRow } from "./cdr";
 
 type AuthStatus = "loading" | "anon" | "in";
 
@@ -130,6 +131,9 @@ export function App() {
 
       {/* ---- Call UI (when registered) ---- */}
       {registered && <CallPanel />}
+
+      {/* ---- Call history (OIDC session only — needs the BFF) ---- */}
+      {authStatus === "in" && registered && <HistoryPanel myExt={myAddr.split("@")[0]} />}
 
       {/* ---- Device selection ---- */}
       {registered && <DevicePicker />}
@@ -428,6 +432,83 @@ function CallPanel() {
       )}
     </section>
   );
+}
+
+/** Recent calls for the logged-in operator (own extension, served by the BFF).
+ * Each row is click-to-call-back. */
+function HistoryPanel({ myExt }: { myExt: string }) {
+  const [rows, setRows] = useState<CdrRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>();
+
+  async function load() {
+    setLoading(true);
+    setErr(undefined);
+    try {
+      const user = await currentUser();
+      if (!user) return;
+      const { cdrs } = await fetchCdr(user.access_token, 50);
+      setRows(cdrs ?? []);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <details className="card history">
+      <summary>Call history</summary>
+      <div className="hist-head">
+        <button className="secondary" onClick={() => void load()} disabled={loading}>
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+      {err && <p className="error">{err}</p>}
+      {!loading && rows.length === 0 && !err && <p className="muted">No calls yet.</p>}
+      <ul className="histlist">
+        {rows.map((c) => {
+          const outbound = c.caller_id_number === myExt;
+          const peer = (outbound ? c.destination_number : c.caller_id_number) || "?";
+          const missed = !outbound && c.answer_epoch === 0;
+          return (
+            <li key={c.id} className="histrow">
+              <span className={`dir ${outbound ? "out" : missed ? "missed" : "in"}`}>
+                {outbound ? "↗" : "↙"}
+              </span>
+              <button className="histpeer" onClick={() => void phone.call(peer)} title="Call back">
+                {peer}
+              </button>
+              <span className="histtime">{fmtTime(c.start_epoch)}</span>
+              <span className="histdur">{missed ? "missed" : fmtDur(c.billsec)}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
+function fmtTime(epoch: number): string {
+  if (!epoch) return "";
+  return new Date(epoch * 1000).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function fmtDur(sec: number): string {
+  if (!sec) return "0:00";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 /** Pick the capture microphone / camera. Selection persists and is applied live
