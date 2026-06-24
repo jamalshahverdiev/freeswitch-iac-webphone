@@ -163,14 +163,14 @@ export async function start(settings: Settings, password: string): Promise<void>
         if (session instanceof Invitation) return;
         lines.set(session.id, {
           session,
-          view: { id: session.id, peer: peerOf(session), outgoing: true, state: "establishing", muted: false, video: false, cameraOff: false },
+          view: { id: session.id, peer: peerOf(session), outgoing: true, state: "establishing", muted: false, video: false, cameraOff: false, sharing: false },
         });
         publish();
       },
       onCallReceived: (session) => {
         lines.set(session.id, {
           session,
-          view: { id: session.id, peer: peerOf(session), outgoing: false, state: "ringing", muted: false, video: false, cameraOff: false },
+          view: { id: session.id, peer: peerOf(session), outgoing: false, state: "ringing", muted: false, video: false, cameraOff: false, sharing: false },
         });
         publish();
       },
@@ -287,9 +287,7 @@ function markVideo(id: string): void {
 /** Toggle the local camera track on a video line (off = far end sees a frozen
  * frame; no renegotiation). */
 export function toggleCamera(id: string): void {
-  const track = pcOf(get(id))
-    ?.getSenders()
-    .find((s) => s.track?.kind === "video")?.track;
+  const track = videoSender(get(id))?.track;
   if (!track) return;
   track.enabled = !track.enabled;
   const line = lines.get(id);
@@ -297,6 +295,51 @@ export function toggleCamera(id: string): void {
     line.view.cameraOff = !track.enabled;
     publish();
   }
+}
+
+function videoSender(session: Session): RTCRtpSender | undefined {
+  return pcOf(session)
+    ?.getSenders()
+    .find((s) => s.track?.kind === "video");
+}
+
+/** Replace the camera with a screen-capture track on a video line. A track swap
+ * (replaceTrack) needs no re-INVITE, so the far end sees the screen seamlessly —
+ * unlike adding video to an audio call, which the FS bridge won't relay. Only
+ * usable on a line that already negotiated video. */
+export async function shareScreen(id: string): Promise<void> {
+  const sender = videoSender(get(id));
+  if (!sender) return;
+  const display = await navigator.mediaDevices.getDisplayMedia({ video: true });
+  const screen = display.getVideoTracks()[0];
+  if (!screen) return;
+  const cam = sender.track;
+  await sender.replaceTrack(screen);
+  cam?.stop(); // free the camera while sharing
+  videoPairFor(get(id)).local.srcObject = new MediaStream([screen]);
+  screen.addEventListener("ended", () => void stopShare(id)); // browser "Stop sharing"
+  const line = lines.get(id);
+  if (line) {
+    line.view.sharing = true;
+    line.view.cameraOff = false;
+    publish();
+  }
+}
+
+/** Stop screen sharing on a line and restore the camera. */
+export async function stopShare(id: string): Promise<void> {
+  const line = lines.get(id);
+  if (!line?.view.sharing) return; // idempotent (button + track 'ended' both call this)
+  const sender = videoSender(get(id));
+  if (!sender) return;
+  const screen = sender.track;
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  const cam = stream.getVideoTracks()[0] ?? null;
+  await sender.replaceTrack(cam);
+  screen?.stop();
+  videoPairFor(get(id)).local.srcObject = cam ? new MediaStream([cam]) : null;
+  line.view.sharing = false;
+  publish();
 }
 
 /** Hang up / reject / cancel a line. */

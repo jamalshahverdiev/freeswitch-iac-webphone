@@ -14,8 +14,11 @@ FreeSWITCH IaC Platform. See [PLAN.md](./PLAN.md) for the full roadmap.
   dial the target, talk, then connect them via REFER-with-Replaces;
 - **video calls** (Phase 3) — tick *Video* before dialing, or *Answer (video)*
   an incoming call, to negotiate a camera track and render the remote feed with
-  a local self-view; *Camera off/on* toggles the local video track. Conference
-  video grid, device selection and screen share come next.
+  a local self-view; *Camera off/on* toggles the local video track;
+- **screen sharing** — *Share screen* on a video call swaps the camera for a
+  display-capture track (seamless `replaceTrack`, no re-INVITE); *Stop sharing*
+  (or the browser's own stop button) restores the camera. Conference video grid
+  and device selection come next.
 
 > Mid-call escalation (adding video to an already-connected audio call) is not
 > supported: FreeSWITCH's bridge does not propagate a mid-call video re-INVITE to

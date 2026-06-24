@@ -21,6 +21,9 @@ export function App() {
 
   const { connected, registration, error } = usePhone();
   const registered = registration === "registered";
+  // Widen the phone-narrow layout while a video call is up, so the remote feed
+  // (especially a shared screen) has room.
+  const hasVideo = usePhone((s) => s.lines.some((l) => l.video));
 
   // Bootstrap: handle the OIDC callback, then auto-register from the BFF session.
   useEffect(() => {
@@ -65,7 +68,7 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className={hasVideo ? "app wide" : "app"}>
       <h1>FreeSWITCH Webphone</h1>
       <p className="sub">SIP.js over WSS · Keycloak sign-in.</p>
 
@@ -234,9 +237,19 @@ function CallPanel() {
                   Hold
                 </button>
                 {line.video && (
-                  <button className="secondary" onClick={() => phone.toggleCamera(line.id)}>
-                    {line.cameraOff ? "Camera on" : "Camera off"}
-                  </button>
+                  <>
+                    <button className="secondary" onClick={() => phone.toggleCamera(line.id)}>
+                      {line.cameraOff ? "Camera on" : "Camera off"}
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() =>
+                        void (line.sharing ? phone.stopShare(line.id) : phone.shareScreen(line.id))
+                      }
+                    >
+                      {line.sharing ? "Stop sharing" : "Share screen"}
+                    </button>
+                  </>
                 )}
                 <button
                   className="secondary"
@@ -399,7 +412,21 @@ function VideoTile({ lineId, active }: { lineId: string; active: boolean }) {
     };
     // re-mount once the line connects (elements exist only after media setup)
   }, [lineId, active]);
-  return <div className="videos" ref={ref} />;
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void ref.current?.requestFullscreen?.();
+  }
+
+  return (
+    <div className="videowrap">
+      {/* the phone-owned <video> nodes are appended into this div imperatively */}
+      <div className="videos" ref={ref} onDoubleClick={toggleFullscreen} />
+      <button className="secondary fs-btn" onClick={toggleFullscreen}>
+        ⛶ Fullscreen
+      </button>
+    </div>
+  );
 }
 
 const DIALPAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];
