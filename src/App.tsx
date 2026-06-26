@@ -14,6 +14,7 @@ import {
   type DevicePrefs,
 } from "./devices";
 import { fetchCdr, type CdrRow } from "./cdr";
+import { streamMyEvents } from "./events";
 import {
   fetchVoicemail,
   fetchVoicemailAudioUrl,
@@ -29,6 +30,29 @@ export function App() {
   const [roles, setRoles] = useState<string[]>([]);
   const [myAddr, setMyAddr] = useState(""); // extension@domain from the session
   const [authErr, setAuthErr] = useState<string>();
+  const [vmSignal, setVmSignal] = useState(0); // bumped on a live voicemail event
+
+  // Live personal events (SSE via the BFF): a voicemail event refreshes the panel.
+  useEffect(() => {
+    if (authStatus !== "in") return;
+    const ctrl = new AbortController();
+    (async () => {
+      const user = await currentUser();
+      if (!user) return;
+      try {
+        await streamMyEvents(
+          user.access_token,
+          (e) => {
+            if (e.type.startsWith("voicemail")) setVmSignal((n) => n + 1);
+          },
+          ctrl.signal,
+        );
+      } catch {
+        /* aborted on unmount / stream ended */
+      }
+    })();
+    return () => ctrl.abort();
+  }, [authStatus]);
 
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [password, setPassword] = useState("");
@@ -142,7 +166,7 @@ export function App() {
       {authStatus === "in" && registered && <HistoryPanel myExt={myAddr.split("@")[0]} />}
 
       {/* ---- Voicemail (OIDC session only) ---- */}
-      {authStatus === "in" && registered && <VoicemailPanel />}
+      {authStatus === "in" && registered && <VoicemailPanel reloadSignal={vmSignal} />}
 
       {/* ---- Device selection ---- */}
       {registered && <DevicePicker />}
@@ -505,7 +529,7 @@ function HistoryPanel({ myExt }: { myExt: string }) {
 
 /** The logged-in operator's voicemail mailbox (metadata + MWI counts), with
  * per-message playback (audio streamed via the BFF). */
-function VoicemailPanel() {
+function VoicemailPanel({ reloadSignal }: { reloadSignal: number }) {
   const [msgs, setMsgs] = useState<VmMessage[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -563,6 +587,12 @@ function VoicemailPanel() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Reload when a live voicemail event arrives (App bumps reloadSignal).
+  useEffect(() => {
+    if (reloadSignal > 0) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadSignal]);
 
   return (
     <details className="card history">

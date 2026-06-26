@@ -8,12 +8,23 @@ export interface LiveEvent {
   data: Record<string, string>;
 }
 
-export async function streamEvents(
+// Supervisor/admin feed: all telephony events.
+export function streamEvents(token: string, onEvent: (e: LiveEvent) => void, signal: AbortSignal) {
+  return streamFrom("/api/events", token, onEvent, signal);
+}
+
+// Agent feed: only events concerning the caller's own extension.
+export function streamMyEvents(token: string, onEvent: (e: LiveEvent) => void, signal: AbortSignal) {
+  return streamFrom("/api/my-events", token, onEvent, signal);
+}
+
+async function streamFrom(
+  path: string,
   token: string,
   onEvent: (e: LiveEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const resp = await fetch(`${bffUrl}/api/events`, {
+  const resp = await fetch(`${bffUrl}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
     signal,
   });
