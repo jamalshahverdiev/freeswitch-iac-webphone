@@ -177,3 +177,6 @@ button.danger { background: var(--danger); }
 .histpeer:hover { color: var(--accent); text-decoration: underline; }
 .histtime { color: var(--muted); font-size: 0.78rem; }
 .histdur { color: var(--muted); font-size: 0.78rem; min-width: 3.5em; text-align: right; }
+
+/* ---- Voicemail ---- */
+.vm-new { background: #e5534b; color: #fff; margin-left: 8px; }

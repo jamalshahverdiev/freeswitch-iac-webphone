@@ -14,6 +14,7 @@ import {
   type DevicePrefs,
 } from "./devices";
 import { fetchCdr, type CdrRow } from "./cdr";
+import { fetchVoicemail, type VmMessage } from "./voicemail";
 
 type AuthStatus = "loading" | "anon" | "in";
 
@@ -134,6 +135,9 @@ export function App() {
 
       {/* ---- Call history (OIDC session only — needs the BFF) ---- */}
       {authStatus === "in" && registered && <HistoryPanel myExt={myAddr.split("@")[0]} />}
+
+      {/* ---- Voicemail (OIDC session only) ---- */}
+      {authStatus === "in" && registered && <VoicemailPanel />}
 
       {/* ---- Device selection ---- */}
       {registered && <DevicePicker />}
@@ -489,6 +493,62 @@ function HistoryPanel({ myExt }: { myExt: string }) {
             </li>
           );
         })}
+      </ul>
+    </details>
+  );
+}
+
+/** The logged-in operator's voicemail mailbox (metadata + MWI counts). Audio
+ * playback will arrive once a server-side stream endpoint exists. */
+function VoicemailPanel() {
+  const [msgs, setMsgs] = useState<VmMessage[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>();
+
+  async function load() {
+    setLoading(true);
+    setErr(undefined);
+    try {
+      const user = await currentUser();
+      if (!user) return;
+      const box = await fetchVoicemail(user.access_token);
+      setMsgs(box.messages ?? []);
+      setUnread(box.unread ?? 0);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <details className="card history">
+      <summary>
+        Voicemail{unread > 0 && <span className="chip vm-new">{unread} new</span>}
+      </summary>
+      <div className="hist-head">
+        <button className="secondary" onClick={() => void load()} disabled={loading}>
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+      {err && <p className="error">{err}</p>}
+      {!loading && msgs.length === 0 && !err && <p className="muted">No messages.</p>}
+      <ul className="histlist">
+        {msgs.map((m) => (
+          <li key={m.uuid} className="histrow">
+            <span className={`dir ${m.read ? "in" : "missed"}`}>✉</span>
+            <span className="histpeer">{m.cid_name || m.cid_number || "Unknown"}</span>
+            {!m.read && <span className="chip vm-new">new</span>}
+            <span className="histtime">{fmtTime(m.created_epoch)}</span>
+            <span className="histdur">{fmtDur(m.message_len)}</span>
+          </li>
+        ))}
       </ul>
     </details>
   );
