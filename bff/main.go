@@ -42,6 +42,11 @@ func main() {
 			r.Get("/api/events", s.handleEvents)
 			r.Get("/api/agents", s.handleAgents)
 			r.Put("/api/agents/{name}/status", s.handleSetAgentStatus)
+			r.Get("/api/calls", s.handleCalls) // live calls + control (supervisor)
+			r.Post("/api/calls/{uuid}/hangup", s.handleCallHangup)
+			r.Post("/api/calls/{uuid}/park", s.handleCallPark)
+			r.Post("/api/calls/{uuid}/transfer", s.handleCallTransfer)
+			r.Post("/api/calls/{uuid}/listen", s.handleCallListen) // covert spy (eavesdrop)
 		})
 	})
 
