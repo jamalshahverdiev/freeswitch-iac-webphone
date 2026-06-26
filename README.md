@@ -26,9 +26,8 @@ FreeSWITCH IaC Platform. See [PLAN.md](./PLAN.md) for the full roadmap.
   it;
 - **call history & voicemail** (Phase 4) — *Call history* lists your recent
   calls (click a number to call back) and *Voicemail* shows your mailbox (sender
-  / time / length, new-message count). Both are scoped by the BFF to your own
-  extension. (Voicemail audio playback needs a server-side stream endpoint —
-  not yet available.)
+  / time / length, new-message count) with **per-message playback** (▶ streams
+  the .wav through the BFF). Both are scoped by the BFF to your own extension.
 
 > Mid-call escalation (adding video to an already-connected audio call) is not
 > supported: FreeSWITCH's bridge does not propagate a mid-call video re-INVITE to

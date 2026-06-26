@@ -29,3 +29,13 @@ export async function fetchVoicemail(token: string): Promise<VmBox> {
   if (!r.ok) throw new Error(`voicemail failed (${r.status})`);
   return r.json();
 }
+
+// Fetch a message's audio with the bearer token and return an object URL for an
+// <audio> element (can't put the token on an <audio src>). Revoke it when done.
+export async function fetchVoicemailAudioUrl(token: string, uuid: string): Promise<string> {
+  const r = await fetch(`${bffUrl}/api/voicemail/${encodeURIComponent(uuid)}/audio`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) throw new Error(`voicemail audio failed (${r.status})`);
+  return URL.createObjectURL(await r.blob());
+}

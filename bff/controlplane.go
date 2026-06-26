@@ -95,6 +95,17 @@ func (c *cpClient) getWithTotal(ctx context.Context, path string) ([]byte, int, 
 	return body, total, nil
 }
 
+// getRaw does a GET and returns the raw response for streaming the body through
+// (e.g. voicemail audio). Caller must close resp.Body.
+func (c *cpClient) getRaw(ctx context.Context, path string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	return c.hc.Do(req)
+}
+
 // putJSON sends a PUT with a JSON body and returns the upstream status code.
 func (c *cpClient) putJSON(ctx context.Context, path string, body any) (int, []byte, error) {
 	b, err := json.Marshal(body)
