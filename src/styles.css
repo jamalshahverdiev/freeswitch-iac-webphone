@@ -186,3 +186,6 @@ button.danger { background: var(--danger); }
 .vm-play { background: #2c313b; color: var(--fg); border: none; border-radius: 6px; width: 28px; height: 28px; cursor: pointer; flex: 0 0 auto; }
 .vm-play:hover { background: var(--accent); }
 .histrow.vm-active { background: #21262f; border-radius: 6px; }
+
+/* ---- Show more (history/voicemail pagination) ---- */
+.histmore { display: block; margin: 10px auto 2px; font-size: 0.8rem; padding: 6px 16px; }

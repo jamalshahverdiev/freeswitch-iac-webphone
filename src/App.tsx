@@ -31,8 +31,11 @@ export function App() {
   const [myAddr, setMyAddr] = useState(""); // extension@domain from the session
   const [authErr, setAuthErr] = useState<string>();
   const [vmSignal, setVmSignal] = useState(0); // bumped on a live voicemail event
+  const [callSignal, setCallSignal] = useState(0); // bumped after a call ends
 
-  // Live personal events (SSE via the BFF): a voicemail event refreshes the panel.
+  // Live personal events (SSE via the BFF): voicemail events refresh the
+  // mailbox; a finished call refreshes call history (slight delay so the CDR is
+  // written before we re-fetch).
   useEffect(() => {
     if (authStatus !== "in") return;
     const ctrl = new AbortController();
@@ -44,6 +47,7 @@ export function App() {
           user.access_token,
           (e) => {
             if (e.type.startsWith("voicemail")) setVmSignal((n) => n + 1);
+            else if (e.type === "call.ended") setTimeout(() => setCallSignal((n) => n + 1), 1500);
           },
           ctrl.signal,
         );
@@ -163,7 +167,9 @@ export function App() {
       {registered && <CallPanel />}
 
       {/* ---- Call history (OIDC session only — needs the BFF) ---- */}
-      {authStatus === "in" && registered && <HistoryPanel myExt={myAddr.split("@")[0]} />}
+      {authStatus === "in" && registered && (
+        <HistoryPanel myExt={myAddr.split("@")[0]} reloadSignal={callSignal} />
+      )}
 
       {/* ---- Voicemail (OIDC session only) ---- */}
       {authStatus === "in" && registered && <VoicemailPanel reloadSignal={vmSignal} />}
@@ -468,11 +474,15 @@ function CallPanel() {
 }
 
 /** Recent calls for the logged-in operator (own extension, served by the BFF).
- * Each row is click-to-call-back. */
-function HistoryPanel({ myExt }: { myExt: string }) {
+ * Each row is click-to-call-back; refreshes live when a call ends. */
+const HIST_PAGE = 10;
+
+function HistoryPanel({ myExt, reloadSignal }: { myExt: string; reloadSignal: number }) {
   const [rows, setRows] = useState<CdrRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>();
+  const [limit, setLimit] = useState(HIST_PAGE);
+  const [hasMore, setHasMore] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -480,8 +490,18 @@ function HistoryPanel({ myExt }: { myExt: string }) {
     try {
       const user = await currentUser();
       if (!user) return;
-      const { cdrs } = await fetchCdr(user.access_token, 50);
-      setRows(cdrs ?? []);
+      const { cdrs } = await fetchCdr(user.access_token, limit);
+      const raw = cdrs ?? [];
+      // Drop the synthetic no-answer legs FreeSWITCH records against the callee's
+      // opaque WebRTC contact token (e.g. "dkrl7174") — you dialed an extension,
+      // not that token, and the real call is already its own row. Keep only rows
+      // whose other party is a numeric extension/number.
+      const real = raw.filter((c) => {
+        const peer = c.caller_id_number === myExt ? c.destination_number : c.caller_id_number;
+        return /^\+?\d+$/.test(peer);
+      });
+      setRows(real);
+      setHasMore(raw.length >= limit); // a full window came back → there may be more
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -489,10 +509,11 @@ function HistoryPanel({ myExt }: { myExt: string }) {
     }
   }
 
+  // Reloads on mount, when the window grows (Show more), and when a call ends.
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [limit, reloadSignal]);
 
   return (
     <details className="card history">
@@ -523,6 +544,11 @@ function HistoryPanel({ myExt }: { myExt: string }) {
           );
         })}
       </ul>
+      {hasMore && (
+        <button className="secondary histmore" onClick={() => setLimit((l) => l + HIST_PAGE)} disabled={loading}>
+          Show more
+        </button>
+      )}
     </details>
   );
 }
@@ -535,6 +561,7 @@ function VoicemailPanel({ reloadSignal }: { reloadSignal: number }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>();
   const [playing, setPlaying] = useState<string | null>(null);
+  const [shown, setShown] = useState(HIST_PAGE);
   const audioRef = useRef<HTMLAudioElement>(null);
   const urlRef = useRef<string | null>(null);
 
@@ -613,7 +640,7 @@ function VoicemailPanel({ reloadSignal }: { reloadSignal: number }) {
       />
       {!loading && msgs.length === 0 && !err && <p className="muted">No messages.</p>}
       <ul className="histlist">
-        {msgs.map((m) => (
+        {msgs.slice(0, shown).map((m) => (
           <li key={m.uuid} className={`histrow ${playing === m.uuid ? "vm-active" : ""}`}>
             <button className="vm-play" onClick={() => void play(m.uuid)} title="Play">
               ▶
@@ -625,6 +652,11 @@ function VoicemailPanel({ reloadSignal }: { reloadSignal: number }) {
           </li>
         ))}
       </ul>
+      {shown < msgs.length && (
+        <button className="secondary histmore" onClick={() => setShown((n) => n + HIST_PAGE)}>
+          Show more
+        </button>
+      )}
     </details>
   );
 }
