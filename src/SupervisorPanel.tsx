@@ -9,6 +9,7 @@ import {
   setAgentStatus,
   type Agent,
 } from "./agents";
+import { fetchCalls, hangupCall, listenCall, parkCall, transferCall, type Channel } from "./calls";
 
 // Live wallboard for supervisors/admins, fed by the BFF-proxied control-plane
 // SSE stream. Event-driven: reflects activity from the moment it opens.
@@ -20,7 +21,46 @@ export function SupervisorPanel() {
   const [offset, setOffset] = useState(0);
   const [active, setActive] = useState(0);
   const [err, setErr] = useState<string>();
+  const [calls, setCalls] = useState<Channel[]>([]);
+  const [xferUuid, setXferUuid] = useState<string | null>(null);
+  const [xferTo, setXferTo] = useState("");
   const activeCalls = useRef<Set<string>>(new Set());
+
+  async function refreshCalls() {
+    const user = await currentUser();
+    if (!user) return;
+    try {
+      setCalls(await fetchCalls(user.access_token));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function callAction(fn: (t: string, uuid: string) => Promise<void>, uuid: string) {
+    const user = await currentUser();
+    if (!user) return;
+    try {
+      await fn(user.access_token, uuid);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      void refreshCalls();
+    }
+  }
+
+  async function doTransfer(uuid: string) {
+    const user = await currentUser();
+    if (!user) return;
+    try {
+      await transferCall(user.access_token, uuid, xferTo.trim());
+      setXferUuid(null);
+      setXferTo("");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      void refreshCalls();
+    }
+  }
 
   async function refreshAgents(off = offset) {
     const user = await currentUser();
@@ -48,6 +88,8 @@ export function SupervisorPanel() {
 
   useEffect(() => {
     void refreshAgents();
+    void refreshCalls();
+    const poll = setInterval(() => void refreshCalls(), 3000); // channels aren't pushed
     const ctrl = new AbortController();
     (async () => {
       try {
@@ -61,9 +103,11 @@ export function SupervisorPanel() {
             if (e.type === "call.started" && uuid) {
               activeCalls.current.add(uuid);
               setActive(activeCalls.current.size);
+              void refreshCalls();
             } else if (e.type === "call.ended" && uuid) {
               activeCalls.current.delete(uuid);
               setActive(activeCalls.current.size);
+              void refreshCalls();
             } else if (e.type === "agent.status" && e.data.agent) {
               setAgents((a) => ({ ...a, [e.data.agent]: e.data.status }));
             }
@@ -74,7 +118,10 @@ export function SupervisorPanel() {
         if (!ctrl.signal.aborted) setErr(e instanceof Error ? e.message : String(e));
       }
     })();
-    return () => ctrl.abort();
+    return () => {
+      clearInterval(poll);
+      ctrl.abort();
+    };
   }, []);
 
   return (
@@ -93,6 +140,65 @@ export function SupervisorPanel() {
           <div className="tile-n">{total}</div>
           <div className="tile-l">agents</div>
         </div>
+      </div>
+
+      <div className="calls">
+        <div className="tile-l">live calls</div>
+        {calls.length === 0 && <div className="muted">none</div>}
+        {calls.map((c) => (
+          <div key={c.uuid} className="call-row">
+            <div className="call-line">
+              <span className="call-parties">
+                {(c.cid_num || "?") + " → " + (c.dest || c.callee_num || "?")}
+              </span>
+              <span className="badge">{c.callstate}</span>
+              <span className="agent-ctl">
+                <button
+                  className="ministatus"
+                  onClick={() => void callAction(listenCall, c.uuid)}
+                  title="Listen in (covert)"
+                >
+                  Listen
+                </button>
+                <button className="ministatus" onClick={() => void callAction(hangupCall, c.uuid)}>
+                  Hangup
+                </button>
+                <button className="ministatus" onClick={() => void callAction(parkCall, c.uuid)}>
+                  Park
+                </button>
+                <button
+                  className="ministatus"
+                  onClick={() => {
+                    setXferUuid((u) => (u === c.uuid ? null : c.uuid));
+                    setXferTo("");
+                  }}
+                >
+                  Transfer
+                </button>
+              </span>
+            </div>
+            {xferUuid === c.uuid && (
+              <form
+                className="dialer"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (xferTo) void doTransfer(c.uuid);
+                }}
+              >
+                <input
+                  placeholder="Transfer to, e.g. 4100"
+                  value={xferTo}
+                  onChange={(e) => setXferTo(e.target.value)}
+                  inputMode="tel"
+                  autoFocus
+                />
+                <button type="submit" disabled={!xferTo}>
+                  Go
+                </button>
+              </form>
+            )}
+          </div>
+        ))}
       </div>
 
       {agentList.length > 0 && (

@@ -189,3 +189,9 @@ button.danger { background: var(--danger); }
 
 /* ---- Show more (history/voicemail pagination) ---- */
 .histmore { display: block; margin: 10px auto 2px; font-size: 0.8rem; padding: 6px 16px; }
+
+/* ---- Supervisor live calls ---- */
+.calls { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.call-row { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; border-bottom: 1px solid #21262f; }
+.call-line { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+.call-parties { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

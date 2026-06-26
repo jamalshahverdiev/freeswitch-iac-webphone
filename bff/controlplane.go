@@ -106,6 +106,33 @@ func (c *cpClient) getRaw(ctx context.Context, path string) (*http.Response, err
 	return c.hc.Do(req)
 }
 
+// postJSON sends a POST (optional JSON body) and returns status + response body.
+func (c *cpClient) postJSON(ctx context.Context, path string, body any) (int, []byte, error) {
+	var rd io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return 0, nil, err
+		}
+		rd = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, rd)
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, out, nil
+}
+
 // post sends a bodyless POST and returns the upstream status code.
 func (c *cpClient) post(ctx context.Context, path string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, nil)
