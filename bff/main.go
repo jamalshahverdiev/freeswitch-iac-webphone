@@ -31,7 +31,8 @@ func main() {
 		r.Use(authMiddleware(verifier))
 		r.Get("/api/session", s.handleSession)
 		r.Get("/api/cdr", s.handleCDR)             // own call history (scoped to caller's extension)
-		r.Get("/api/voicemail", s.handleVoicemail) // own mailbox (scoped to caller's extension)
+		r.Get("/api/voicemail", s.handleVoicemail)                  // own mailbox (scoped to caller's extension)
+		r.Get("/api/voicemail/{uuid}/audio", s.handleVoicemailAudio) // stream one message's .wav
 
 		// supervisor/admin: live telephony events + agent control (proxied)
 		r.Group(func(r chi.Router) {

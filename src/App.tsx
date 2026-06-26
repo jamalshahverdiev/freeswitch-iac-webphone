@@ -14,7 +14,7 @@ import {
   type DevicePrefs,
 } from "./devices";
 import { fetchCdr, type CdrRow } from "./cdr";
-import { fetchVoicemail, type VmMessage } from "./voicemail";
+import { fetchVoicemail, fetchVoicemailAudioUrl, type VmMessage } from "./voicemail";
 
 type AuthStatus = "loading" | "anon" | "in";
 
@@ -498,13 +498,16 @@ function HistoryPanel({ myExt }: { myExt: string }) {
   );
 }
 
-/** The logged-in operator's voicemail mailbox (metadata + MWI counts). Audio
- * playback will arrive once a server-side stream endpoint exists. */
+/** The logged-in operator's voicemail mailbox (metadata + MWI counts), with
+ * per-message playback (audio streamed via the BFF). */
 function VoicemailPanel() {
   const [msgs, setMsgs] = useState<VmMessage[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>();
+  const [playing, setPlaying] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const urlRef = useRef<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -522,8 +525,30 @@ function VoicemailPanel() {
     }
   }
 
+  async function play(uuid: string) {
+    setErr(undefined);
+    try {
+      const user = await currentUser();
+      if (!user) return;
+      const url = await fetchVoicemailAudioUrl(user.access_token, uuid);
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = url;
+      setPlaying(uuid);
+      const el = audioRef.current;
+      if (el) {
+        el.src = url;
+        void el.play();
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   useEffect(() => {
     void load();
+    return () => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -538,11 +563,19 @@ function VoicemailPanel() {
         </button>
       </div>
       {err && <p className="error">{err}</p>}
+      <audio
+        ref={audioRef}
+        controls
+        className="vm-player"
+        style={{ display: playing ? "block" : "none" }}
+      />
       {!loading && msgs.length === 0 && !err && <p className="muted">No messages.</p>}
       <ul className="histlist">
         {msgs.map((m) => (
-          <li key={m.uuid} className="histrow">
-            <span className={`dir ${m.read ? "in" : "missed"}`}>✉</span>
+          <li key={m.uuid} className={`histrow ${playing === m.uuid ? "vm-active" : ""}`}>
+            <button className="vm-play" onClick={() => void play(m.uuid)} title="Play">
+              ▶
+            </button>
             <span className="histpeer">{m.cid_name || m.cid_number || "Unknown"}</span>
             {!m.read && <span className="chip vm-new">new</span>}
             <span className="histtime">{fmtTime(m.created_epoch)}</span>

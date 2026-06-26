@@ -180,3 +180,9 @@ button.danger { background: var(--danger); }
 
 /* ---- Voicemail ---- */
 .vm-new { background: #e5534b; color: #fff; margin-left: 8px; }
+
+/* ---- Voicemail player ---- */
+.vm-player { width: 100%; margin: 8px 0; height: 36px; }
+.vm-play { background: #2c313b; color: var(--fg); border: none; border-radius: 6px; width: 28px; height: 28px; cursor: pointer; flex: 0 0 auto; }
+.vm-play:hover { background: var(--accent); }
+.histrow.vm-active { background: #21262f; border-radius: 6px; }
