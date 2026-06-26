@@ -23,7 +23,12 @@ FreeSWITCH IaC Platform. See [PLAN.md](./PLAN.md) for the full roadmap.
 - **video conferences** — *Join with video* dials a `mod_conference` room (e.g.
   `3500`, served from the platform's `video-grid` profile) and renders the
   composited video-grid mosaic; *Fullscreen* (or double-click the tile) enlarges
-  it.
+  it;
+- **call history & voicemail** (Phase 4) — *Call history* lists your recent
+  calls (click a number to call back) and *Voicemail* shows your mailbox (sender
+  / time / length, new-message count). Both are scoped by the BFF to your own
+  extension. (Voicemail audio playback needs a server-side stream endpoint —
+  not yet available.)
 
 > Mid-call escalation (adding video to an already-connected audio call) is not
 > supported: FreeSWITCH's bridge does not propagate a mid-call video re-INVITE to
