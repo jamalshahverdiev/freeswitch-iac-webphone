@@ -14,7 +14,12 @@ import {
   type DevicePrefs,
 } from "./devices";
 import { fetchCdr, type CdrRow } from "./cdr";
-import { fetchVoicemail, fetchVoicemailAudioUrl, type VmMessage } from "./voicemail";
+import {
+  fetchVoicemail,
+  fetchVoicemailAudioUrl,
+  markVoicemailRead,
+  type VmMessage,
+} from "./voicemail";
 
 type AuthStatus = "loading" | "anon" | "in";
 
@@ -538,6 +543,13 @@ function VoicemailPanel() {
       if (el) {
         el.src = url;
         void el.play();
+      }
+      // Listening marks it read: update the row + unread count now, persist async.
+      const wasUnread = msgs.some((m) => m.uuid === uuid && !m.read);
+      if (wasUnread) {
+        setMsgs((prev) => prev.map((m) => (m.uuid === uuid ? { ...m, read: true } : m)));
+        setUnread((u) => Math.max(0, u - 1));
+        void markVoicemailRead(user.access_token, uuid).catch(() => {});
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));

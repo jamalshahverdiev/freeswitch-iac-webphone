@@ -106,6 +106,22 @@ func (c *cpClient) getRaw(ctx context.Context, path string) (*http.Response, err
 	return c.hc.Do(req)
 }
 
+// post sends a bodyless POST and returns the upstream status code.
+func (c *cpClient) post(ctx context.Context, path string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode, nil
+}
+
 // putJSON sends a PUT with a JSON body and returns the upstream status code.
 func (c *cpClient) putJSON(ctx context.Context, path string, body any) (int, []byte, error) {
 	b, err := json.Marshal(body)

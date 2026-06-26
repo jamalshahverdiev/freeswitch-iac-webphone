@@ -73,3 +73,29 @@ func (s *server) handleVoicemailAudio(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, resp.Body)
 }
+
+// handleVoicemailMarkRead marks a message read in the caller's own mailbox.
+// POST /api/voicemail/{uuid}/read
+func (s *server) handleVoicemailMarkRead(w http.ResponseWriter, r *http.Request) {
+	id := identityFrom(r.Context())
+
+	op, err := s.cp.operator(r.Context(), id.Subject)
+	if errors.Is(err, errNotFound) {
+		writeErr(w, http.StatusForbidden, "no operator binding for this identity")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "operator lookup failed: "+err.Error())
+		return
+	}
+
+	uuid := chi.URLParam(r, "uuid")
+	path := "/api/v1/voicemail/" + url.PathEscape(op.Domain) + "/" + url.PathEscape(op.Number) +
+		"/" + url.PathEscape(uuid) + "/read"
+	code, err := s.cp.post(r.Context(), path)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "mark read failed: "+err.Error())
+		return
+	}
+	w.WriteHeader(code)
+}
