@@ -39,3 +39,12 @@ export async function fetchVoicemailAudioUrl(token: string, uuid: string): Promi
   if (!r.ok) throw new Error(`voicemail audio failed (${r.status})`);
   return URL.createObjectURL(await r.blob());
 }
+
+// Mark a message read (listened) so it stops showing as new.
+export async function markVoicemailRead(token: string, uuid: string): Promise<void> {
+  const r = await fetch(`${bffUrl}/api/voicemail/${encodeURIComponent(uuid)}/read`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) throw new Error(`mark read failed (${r.status})`);
+}
