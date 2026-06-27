@@ -170,6 +170,27 @@ func (c *cpClient) putJSON(ctx context.Context, path string, body any) (int, []b
 	return resp.StatusCode, out, nil
 }
 
+// deleteJSON sends a DELETE with a JSON body and returns the upstream status code.
+func (c *cpClient) deleteJSON(ctx context.Context, path string, body any) (int, error) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.base+path, bytes.NewReader(b))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode, nil
+}
+
 type cpUser struct {
 	Params map[string]string `json:"params"`
 }

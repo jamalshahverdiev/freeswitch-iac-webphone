@@ -36,6 +36,10 @@ func main() {
 		r.Post("/api/voicemail/{uuid}/read", s.handleVoicemailMarkRead) // mark a message listened
 		r.Get("/api/my-events", s.handleMyEvents) // own SSE feed (voicemail/calls for this extension)
 
+		r.Get("/api/push/vapid", s.handlePushVAPID)              // server VAPID public key
+		r.Post("/api/push/subscribe", s.handlePushSubscribe)     // register this browser for push
+		r.Delete("/api/push/subscribe", s.handlePushUnsubscribe) // drop a subscription
+
 		// supervisor/admin: live telephony events + agent control (proxied)
 		r.Group(func(r chi.Router) {
 			r.Use(requireRole("supervisor", "admin"))

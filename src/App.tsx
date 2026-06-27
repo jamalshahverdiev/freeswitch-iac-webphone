@@ -15,6 +15,7 @@ import {
 } from "./devices";
 import { fetchCdr, type CdrRow } from "./cdr";
 import { streamMyEvents } from "./events";
+import { enablePush } from "./push";
 import {
   fetchVoicemail,
   fetchVoicemailAudioUrl,
@@ -33,12 +34,18 @@ export function App() {
   const [vmSignal, setVmSignal] = useState(0); // bumped on a live voicemail event
   const [callSignal, setCallSignal] = useState(0); // bumped after a call ends
 
-  // Ask for notification permission once signed in (so push notifications can
-  // be shown — e.g. a new voicemail, or the DevTools "Push" test).
+  // Once signed in, ask for notification permission and, if granted, register
+  // this browser for server-initiated Web Push (new voicemail shows even when
+  // the tab is closed). No-ops when unsupported or push is disabled server-side.
   useEffect(() => {
-    if (authStatus === "in" && "Notification" in window && Notification.permission === "default") {
-      void Notification.requestPermission();
-    }
+    if (authStatus !== "in") return;
+    void (async () => {
+      if ("Notification" in window && Notification.permission === "default") {
+        await Notification.requestPermission();
+      }
+      const user = await currentUser();
+      if (user) await enablePush(user.access_token);
+    })();
   }, [authStatus]);
 
   // Live personal events (SSE via the BFF): voicemail events refresh the
