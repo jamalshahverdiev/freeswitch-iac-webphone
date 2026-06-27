@@ -27,7 +27,11 @@ FreeSWITCH IaC Platform. See [PLAN.md](./PLAN.md) for the full roadmap.
 - **call history & voicemail** (Phase 4) — *Call history* lists your recent
   calls (click a number to call back) and *Voicemail* shows your mailbox (sender
   / time / length, new-message count) with **per-message playback** (▶ streams
-  the .wav through the BFF). Both are scoped by the BFF to your own extension.
+  the .wav through the BFF). Both are scoped by the BFF to your own extension;
+- **installable PWA** (Phase 5) — a web manifest + service worker make the app
+  installable (standalone window, home-screen/app icon) and cache the shell so
+  it loads offline. The service worker only touches same-origin assets — the
+  BFF, Keycloak and SIP WSS are never intercepted.
 
 > Mid-call escalation (adding video to an already-connected audio call) is not
 > supported: FreeSWITCH's bridge does not propagate a mid-call video re-INVITE to

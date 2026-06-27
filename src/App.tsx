@@ -33,6 +33,14 @@ export function App() {
   const [vmSignal, setVmSignal] = useState(0); // bumped on a live voicemail event
   const [callSignal, setCallSignal] = useState(0); // bumped after a call ends
 
+  // Ask for notification permission once signed in (so push notifications can
+  // be shown — e.g. a new voicemail, or the DevTools "Push" test).
+  useEffect(() => {
+    if (authStatus === "in" && "Notification" in window && Notification.permission === "default") {
+      void Notification.requestPermission();
+    }
+  }, [authStatus]);
+
   // Live personal events (SSE via the BFF): voicemail events refresh the
   // mailbox; a finished call refreshes call history (slight delay so the CDR is
   // written before we re-fetch).
