@@ -14,8 +14,9 @@ import {
   type DevicePrefs,
 } from "./devices";
 import { fetchCdr, type CdrRow } from "./cdr";
-import { streamMyEvents } from "./events";
+import { streamMyEvents, streamEvents } from "./events";
 import { enablePush } from "./push";
+import { fetchRecordings, fetchRecordingAudioUrl, type Recording } from "./recordings";
 import {
   fetchVoicemail,
   fetchVoicemailAudioUrl,
@@ -72,6 +73,31 @@ export function App() {
     })();
     return () => ctrl.abort();
   }, [authStatus]);
+
+  // Supervisors/admins also watch the full event stream so the Recordings panel
+  // auto-refreshes on ANY call ending (not just their own) — my-events above is
+  // scoped to the caller's extension, so a 4201↔4202 call wouldn't reach it.
+  const isSuper = roles.includes("supervisor") || roles.includes("admin");
+  useEffect(() => {
+    if (authStatus !== "in" || !isSuper) return;
+    const ctrl = new AbortController();
+    (async () => {
+      const user = await currentUser();
+      if (!user) return;
+      try {
+        await streamEvents(
+          user.access_token,
+          (e) => {
+            if (e.type === "call.ended") setTimeout(() => setCallSignal((n) => n + 1), 1500);
+          },
+          ctrl.signal,
+        );
+      } catch {
+        /* aborted on unmount / stream ended */
+      }
+    })();
+    return () => ctrl.abort();
+  }, [authStatus, isSuper]);
 
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [password, setPassword] = useState("");
@@ -188,6 +214,13 @@ export function App() {
 
       {/* ---- Voicemail (OIDC session only) ---- */}
       {authStatus === "in" && registered && <VoicemailPanel reloadSignal={vmSignal} />}
+
+      {authStatus === "in" && registered && (
+        <RecordingsPanel
+          canAll={roles.includes("supervisor") || roles.includes("admin")}
+          reloadSignal={callSignal}
+        />
+      )}
 
       {/* ---- Device selection ---- */}
       {registered && <DevicePicker />}
@@ -674,6 +707,125 @@ function VoicemailPanel({ reloadSignal }: { reloadSignal: number }) {
       )}
     </details>
   );
+}
+
+/** Call recordings for the operator (own), with an "all" toggle for
+ * supervisors/admins. Playback streamed via the BFF. */
+function RecordingsPanel({ canAll, reloadSignal }: { canAll: boolean; reloadSignal: number }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
+  // Supervisors/admins start in "all" mode (QA) — agents are scoped to their own.
+  const [all, setAll] = useState(canAll);
+  const [recs, setRecs] = useState<Recording[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>();
+  const [playing, setPlaying] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const urlRef = useRef<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setErr(undefined);
+    try {
+      const user = await currentUser();
+      if (!user) return;
+      const box = await fetchRecordings(user.access_token, from, to, all && canAll);
+      setRecs(box.recordings ?? []);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function play(rec: Recording) {
+    setErr(undefined);
+    try {
+      const user = await currentUser();
+      if (!user) return;
+      const url = await fetchRecordingAudioUrl(user.access_token, rec.date, rec.file);
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = url;
+      setPlaying(rec.file);
+      const el = audioRef.current;
+      if (el) {
+        el.src = url;
+        void el.play();
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    return () => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, all]);
+
+  // Auto-refresh when a call ends (App bumps reloadSignal ~1.5s after call.ended,
+  // by which point the .wav is finalized). Only reload if today is in range.
+  useEffect(() => {
+    if (reloadSignal > 0 && from <= today && today <= to) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadSignal]);
+
+  return (
+    <details className="card history">
+      <summary>Recordings</summary>
+      <div className="hist-head">
+        <label className="muted">
+          from <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className="muted" style={{ marginLeft: 8 }}>
+          to <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
+        </label>
+        {canAll && (
+          <label className="muted" style={{ marginLeft: 8 }}>
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> all
+          </label>
+        )}
+        <button className="secondary" onClick={() => void load()} disabled={loading}>
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+      {err && <p className="error">{err}</p>}
+      <audio
+        ref={audioRef}
+        controls
+        className="vm-player"
+        style={{ display: playing ? "block" : "none" }}
+      />
+      {!loading && recs.length === 0 && !err && <p className="muted">No recordings.</p>}
+      <ul className="histlist">
+        {recs.map((rec) => (
+          <li key={rec.date + "/" + rec.file} className={`histrow ${playing === rec.file ? "vm-active" : ""}`}>
+            <button className="vm-play" onClick={() => void play(rec)} title="Play">
+              ▶
+            </button>
+            <span className="histpeer">
+              {rec.caller || "?"} → {rec.dest || "?"}
+            </span>
+            <span className="histtime">
+              {rec.date} {fmtClock(rec.mtime)}
+            </span>
+            <span className="histdur">{Math.round(rec.size / 1024)} KB</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+// Compact HH:MM (local) from an RFC1123 mtime string like "Wed, 01 Jul 2026 14:37:52 GMT".
+function fmtClock(mtime: string): string {
+  const d = new Date(mtime);
+  return isNaN(d.getTime())
+    ? ""
+    : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function fmtTime(epoch: number): string {

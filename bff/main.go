@@ -40,6 +40,9 @@ func main() {
 		r.Post("/api/push/subscribe", s.handlePushSubscribe)     // register this browser for push
 		r.Delete("/api/push/subscribe", s.handlePushUnsubscribe) // drop a subscription
 
+		r.Get("/api/recordings", s.handleRecordings)                    // own recordings (scoped to extension)
+		r.Get("/api/recordings/{date}/{file}/audio", s.handleRecordingAudio) // stream one recording
+
 		// supervisor/admin: live telephony events + agent control (proxied)
 		r.Group(func(r chi.Router) {
 			r.Use(requireRole("supervisor", "admin"))
@@ -51,6 +54,7 @@ func main() {
 			r.Post("/api/calls/{uuid}/park", s.handleCallPark)
 			r.Post("/api/calls/{uuid}/transfer", s.handleCallTransfer)
 			r.Post("/api/calls/{uuid}/listen", s.handleCallListen) // covert spy (eavesdrop)
+			r.Get("/api/recordings/all", s.handleRecordingsAll)    // every recording (supervisor QA)
 		})
 	})
 
