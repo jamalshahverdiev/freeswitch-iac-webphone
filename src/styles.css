@@ -13,6 +13,9 @@
 
 * { box-sizing: border-box; }
 
+/* Media never overflows its container. */
+img, video, audio, canvas { max-width: 100%; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -21,7 +24,7 @@ body {
 }
 
 .app {
-  max-width: 460px;
+  max-width: min(720px, 96vw);
   margin: 40px auto;
   padding: 0 16px;
   transition: max-width 0.2s ease;
@@ -47,7 +50,7 @@ h1 { font-size: 1.4rem; margin: 0 0 2px; }
 .muted { color: var(--muted); font-weight: 400; }
 
 .settings { display: flex; flex-direction: column; gap: 12px; }
-.settings .row { display: flex; gap: 12px; }
+.settings .row { display: flex; flex-wrap: wrap; gap: 12px; }
 .settings .row label { flex: 1 1 0; min-width: 0; } /* min-width:0 lets the field shrink inside flex */
 label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--muted); min-width: 0; }
 
@@ -105,7 +108,7 @@ button.danger { background: var(--danger); }
 .error { color: var(--danger); font-size: 0.85rem; margin: 12px 0 0; }
 
 .signin button { width: 100%; }
-.whoami { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.whoami { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .whoami strong { font-size: 1.05rem; }
 .roles { margin-left: 8px; }
 .chip {
@@ -125,16 +128,16 @@ button.danger { background: var(--danger); }
 
 /* supervisor wallboard */
 .sup-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
-.tiles { display: flex; gap: 12px; margin-bottom: 14px; }
-.tile { flex: 1; background: #21262f; border-radius: 10px; padding: 12px; text-align: center; }
+.tiles { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+.tile { flex: 1 1 88px; min-width: 88px; background: #21262f; border-radius: 10px; padding: 12px; text-align: center; }
 .tile-n { font-size: 1.6rem; font-weight: 700; }
 .tile-l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .agents { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-.agent-row { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+.agent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.85rem; }
 .agent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { font-size: 0.72rem; background: #2c313b; color: var(--muted); border-radius: 6px; padding: 1px 7px; flex: 0 0 auto; }
 .badge.ok { color: var(--ok); }
-.agent-ctl { display: flex; gap: 4px; flex: 0 0 auto; }
+.agent-ctl { display: flex; flex-wrap: wrap; gap: 4px; flex: 0 0 auto; }
 .ministatus { background: #2c313b; color: var(--fg); font-size: 0.7rem; font-weight: 600; padding: 4px 7px; border-radius: 6px; }
 .ministatus:hover:not(:disabled) { background: var(--accent); }
 .ministatus:disabled { opacity: 0.4; cursor: default; }
@@ -143,7 +146,7 @@ button.danger { background: var(--danger); }
 .evlog { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; font-size: 0.8rem; }
 .evrow { display: flex; gap: 8px; }
 .evtype { color: var(--accent); flex: 0 0 130px; }
-.evdata { color: var(--muted); }
+.evdata { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 
 /* ---- Video (Phase 3) ---- */
 .videowrap { width: 100%; }
@@ -165,17 +168,19 @@ button.danger { background: var(--danger); }
 
 /* ---- Call history ---- */
 .history summary { cursor: pointer; font-weight: 600; }
-.hist-head { display: flex; justify-content: flex-end; margin: 8px 0; }
+.hist-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 8px 0; }
 .hist-head button { font-size: 0.78rem; padding: 5px 10px; }
+.hist-head input { width: auto; }
+.hist-head label { flex-direction: row; align-items: center; gap: 4px; }
 .histlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .histrow { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid #21262f; font-size: 0.85rem; }
 .histrow .dir { font-size: 1rem; width: 1.2em; text-align: center; }
 .histrow .dir.out { color: var(--accent); }
 .histrow .dir.in { color: var(--ok); }
 .histrow .dir.missed { color: #e5534b; }
-.histpeer { flex: 1; text-align: left; background: none; border: none; color: var(--fg); font: inherit; cursor: pointer; padding: 0; }
+.histpeer { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; background: none; border: none; color: var(--fg); font: inherit; cursor: pointer; padding: 0; }
 .histpeer:hover { color: var(--accent); text-decoration: underline; }
-.histtime { color: var(--muted); font-size: 0.78rem; }
+.histtime { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
 .histdur { color: var(--muted); font-size: 0.78rem; min-width: 3.5em; text-align: right; }
 
 /* ---- Voicemail ---- */
@@ -193,5 +198,5 @@ button.danger { background: var(--danger); }
 /* ---- Supervisor live calls ---- */
 .calls { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .call-row { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; border-bottom: 1px solid #21262f; }
-.call-line { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+.call-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.85rem; }
 .call-parties { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
